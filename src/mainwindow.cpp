@@ -58,6 +58,7 @@
 #include "theme.h"
 #include "util.h"
 #include "version.h"
+#include "meshimporter.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
@@ -477,7 +478,59 @@ bool MainWindow::loadObj(const QString& filename)
         return false;
     }
 
-    // Reset preview state for new model
+    std::vector<AutoRemesher::Vector3> vertices(attributes.vertices.size() / 3);
+    for (size_t i = 0, j = 0; i < vertices.size(); ++i) {
+        auto& dest = vertices[i];
+        dest.setX(attributes.vertices[j++]);
+        dest.setY(attributes.vertices[j++]);
+        dest.setZ(attributes.vertices[j++]);
+    }
+
+    std::vector<std::vector<size_t>> triangles;
+    for (const auto& shape : shapes) {
+        for (size_t i = 0; i < shape.mesh.indices.size(); i += 3) {
+            triangles.push_back(std::vector<size_t> {
+                (size_t)shape.mesh.indices[i + 0].vertex_index,
+                (size_t)shape.mesh.indices[i + 1].vertex_index,
+                (size_t)shape.mesh.indices[i + 2].vertex_index });
+        }
+    }
+
+    applyLoadedModel(vertices, triangles);
+    return true;
+}
+
+// Dispatch to the right loader by file extension. Shared by the GUI Open action
+// and the headless CLI path so both accept the same set of formats.
+bool MainWindow::loadModelFile(const QString& filename)
+{
+    const QString lower = filename.toLower();
+    if (lower.endsWith(".obj"))
+        return loadObj(filename);
+
+    std::vector<AutoRemesher::Vector3> vertices;
+    std::vector<std::vector<size_t>> triangles;
+    bool loaded = false;
+    if (lower.endsWith(".stl"))
+        loaded = MeshImporter::loadStl(filename, vertices, triangles);
+    else if (lower.endsWith(".3mf"))
+        loaded = MeshImporter::load3mf(filename, vertices, triangles);
+    else {
+        qDebug() << "Unsupported input format:" << filename;
+        return false;
+    }
+    if (!loaded)
+        return false;
+
+    applyLoadedModel(vertices, triangles);
+    return true;
+}
+
+// Reset preview state and adopt a freshly loaded mesh. Every loader funnels
+// through here so the pipeline sees one representation regardless of format.
+void MainWindow::applyLoadedModel(std::vector<AutoRemesher::Vector3>& vertices,
+    std::vector<std::vector<size_t>>& triangles)
+{
     delete m_sourceRenderMesh;
     m_sourceRenderMesh = nullptr;
     delete m_isotropicRenderMesh;
@@ -501,23 +554,8 @@ bool MainWindow::loadObj(const QString& filename)
     m_previewParamButton->setChecked(false);
     m_previewRemeshButton->setChecked(false);
 
-    m_originalVertices.resize(attributes.vertices.size() / 3);
-    for (size_t i = 0, j = 0; i < m_originalVertices.size(); ++i) {
-        auto& dest = m_originalVertices[i];
-        dest.setX(attributes.vertices[j++]);
-        dest.setY(attributes.vertices[j++]);
-        dest.setZ(attributes.vertices[j++]);
-    }
-
-    m_originalTriangles.clear();
-    for (const auto& shape : shapes) {
-        for (size_t i = 0; i < shape.mesh.indices.size(); i += 3) {
-            m_originalTriangles.push_back(std::vector<size_t> {
-                (size_t)shape.mesh.indices[i + 0].vertex_index,
-                (size_t)shape.mesh.indices[i + 1].vertex_index,
-                (size_t)shape.mesh.indices[i + 2].vertex_index });
-        }
-    }
+    m_originalVertices = std::move(vertices);
+    m_originalTriangles = std::move(triangles);
 
     qDebug() << "m_originalVertices.size():" << m_originalVertices.size();
     qDebug() << "m_originalTriangles.size():" << m_originalTriangles.size();
@@ -525,8 +563,6 @@ bool MainWindow::loadObj(const QString& filename)
     m_renderQueue.push({ m_originalVertices,
         m_originalTriangles });
     checkRenderQueue();
-
-    return true;
 }
 
 void MainWindow::loadModel()
@@ -553,12 +589,12 @@ void MainWindow::loadModel()
     }
 
     QString filename = QFileDialog::getOpenFileName(this, QString(), QString(),
-        tr("Wavefront (*.obj)"));
+        tr("3D Models (*.obj *.stl *.3mf);;Wavefront (*.obj);;STL (*.stl);;3MF (*.3mf)"));
     if (filename.isEmpty())
         return;
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    bool objLoaded = loadObj(filename);
+    bool objLoaded = loadModelFile(filename);
     QApplication::restoreOverrideCursor();
 
     if (objLoaded) {
@@ -1308,7 +1344,7 @@ void MainWindow::runHeadless()
 
     // Load the input file and generate the quad mesh without UI dialogs
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    bool objLoaded = loadObj(m_currentFilename);
+    bool objLoaded = loadModelFile(m_currentFilename);
     QApplication::restoreOverrideCursor();
 
     if (!objLoaded) {

@@ -88,7 +88,10 @@ private slots:
     void updateTitle();
     void loadModel();
     void saveMesh();
+    bool loadModelFile(const QString& filename);
     bool loadObj(const QString& filename);
+    void applyLoadedModel(std::vector<AutoRemesher::Vector3>& vertices,
+        std::vector<std::vector<size_t>>& triangles);
     void setCurrentFilename(const QString& filename);
     void checkRenderQueue();
     void renderMeshReady();

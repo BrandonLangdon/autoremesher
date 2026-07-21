@@ -85,8 +85,8 @@ int main(int argc, char** argv)
     parser.addVersionOption();
 
     QCommandLineOption inputOption(QStringList { "i", "input" },
-        QCoreApplication::translate("main", "Input .obj file to remesh"),
-        QCoreApplication::translate("main", "file.obj"));
+        QCoreApplication::translate("main", "Input model to remesh (.obj, .stl, .3mf)"),
+        QCoreApplication::translate("main", "file"));
     parser.addOption(inputOption);
 
     QCommandLineOption outputOption(QStringList { "o", "output" },

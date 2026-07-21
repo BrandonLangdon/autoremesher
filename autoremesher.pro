@@ -145,6 +145,9 @@ HEADERS += src/util.h
 SOURCES += src/mainwindow.cpp
 HEADERS += src/mainwindow.h
 
+SOURCES += src/meshimporter.cpp
+HEADERS += src/meshimporter.h
+
 SOURCES += src/aboutwidget.cpp
 HEADERS += src/aboutwidget.h
 
