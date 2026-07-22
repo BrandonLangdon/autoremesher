@@ -144,8 +144,11 @@ bool inflateEntry(const unsigned char* src, size_t compressedSize, uint16_t meth
     return true;
 }
 
-// Locate and extract the 3D model XML entry from a 3MF (ZIP) archive.
-bool extractModelXml(const QByteArray& data, QByteArray& xmlOut)
+// Extract every 3D model part (an entry named "*.model") from a 3MF (ZIP)
+// archive. Production 3MF (BambuStudio/Orca/Prusa) puts the root build in
+// "3D/3dmodel.model" and the actual geometry in referenced "3D/Objects/*.model"
+// parts, so all of them are inflated and returned for the caller to merge.
+bool extractModelParts(const QByteArray& data, std::vector<QByteArray>& partsOut)
 {
     const unsigned char* bytes = reinterpret_cast<const unsigned char*>(data.constData());
     const size_t size = (size_t)data.size();
@@ -168,7 +171,7 @@ bool extractModelXml(const QByteArray& data, QByteArray& xmlOut)
     const uint32_t cdOffset = readU32LE(bytes + eocd + 16);
     if (cdOffset >= size)
         return false;
-    // Walk the central directory; prefer an entry named like "3dmodel.model".
+    // Walk the central directory, inflating every ".model" part.
     size_t cursor = cdOffset;
     for (uint16_t e = 0; e < totalEntries; ++e) {
         if (cursor + 46 > size || readU32LE(bytes + cursor) != 0x02014b50)
@@ -188,15 +191,17 @@ bool extractModelXml(const QByteArray& data, QByteArray& xmlOut)
         // Read the local header to find where the entry data actually starts;
         // its name/extra lengths can differ from the central-directory copy.
         if (localOffset + 30 > size || readU32LE(bytes + localOffset) != 0x04034b50)
-            return false;
+            continue;
         const uint16_t localNameLen = readU16LE(bytes + localOffset + 26);
         const uint16_t localExtraLen = readU16LE(bytes + localOffset + 28);
         const size_t dataStart = localOffset + 30 + localNameLen + localExtraLen;
         if (dataStart + compressedSize > size)
-            return false;
-        return inflateEntry(bytes + dataStart, compressedSize, method, uncompressedSize, xmlOut);
+            continue;
+        QByteArray part;
+        if (inflateEntry(bytes + dataStart, compressedSize, method, uncompressedSize, part))
+            partsOut.push_back(std::move(part));
     }
-    return false;
+    return !partsOut.empty();
 }
 
 } // namespace
@@ -231,45 +236,47 @@ bool load3mf(const QString& filename,
     if (!file.open(QIODevice::ReadOnly))
         return false;
     const QByteArray data = file.readAll();
-    QByteArray xml;
-    if (!extractModelXml(data, xml)) {
-        qDebug() << "load3mf: could not extract model XML from" << filename;
+    std::vector<QByteArray> parts;
+    if (!extractModelParts(data, parts)) {
+        qDebug() << "load3mf: could not extract any model part from" << filename;
         return false;
     }
     // Parse into raw (unwelded) arrays first. 3MF meshes routinely contain
     // coincident-but-distinct vertices; the connectivity-based pipeline (island
     // separation, quad_cover) needs those merged, so weld by position afterwards
-    // the same way the STL loader does.
+    // the same way the STL loader does. Build-item transforms are not applied.
     std::vector<Vector3> rawVertices;
     std::vector<std::vector<size_t>> rawTriangles;
-    QXmlStreamReader reader(xml);
-    size_t meshVertexBase = rawVertices.size();
-    while (!reader.atEnd()) {
-        const QXmlStreamReader::TokenType token = reader.readNext();
-        if (token != QXmlStreamReader::StartElement)
-            continue;
-        const QString name = reader.name().toString();
-        if (name == QLatin1String("mesh")) {
-            // A new mesh: subsequent vertex indices are local to it.
-            meshVertexBase = rawVertices.size();
-        } else if (name == QLatin1String("vertex")) {
-            const QXmlStreamAttributes attrs = reader.attributes();
-            rawVertices.push_back(Vector3(
-                attrs.value(QLatin1String("x")).toDouble(),
-                attrs.value(QLatin1String("y")).toDouble(),
-                attrs.value(QLatin1String("z")).toDouble()));
-        } else if (name == QLatin1String("triangle")) {
-            const QXmlStreamAttributes attrs = reader.attributes();
-            const size_t v1 = meshVertexBase + attrs.value(QLatin1String("v1")).toULongLong();
-            const size_t v2 = meshVertexBase + attrs.value(QLatin1String("v2")).toULongLong();
-            const size_t v3 = meshVertexBase + attrs.value(QLatin1String("v3")).toULongLong();
-            if (v1 < rawVertices.size() && v2 < rawVertices.size() && v3 < rawVertices.size())
-                rawTriangles.push_back({ v1, v2, v3 });
+    for (const QByteArray& xml : parts) {
+        QXmlStreamReader reader(xml);
+        size_t meshVertexBase = rawVertices.size();
+        while (!reader.atEnd()) {
+            const QXmlStreamReader::TokenType token = reader.readNext();
+            if (token != QXmlStreamReader::StartElement)
+                continue;
+            const QString name = reader.name().toString();
+            if (name == QLatin1String("mesh")) {
+                // A new mesh: subsequent vertex indices are local to it.
+                meshVertexBase = rawVertices.size();
+            } else if (name == QLatin1String("vertex")) {
+                const QXmlStreamAttributes attrs = reader.attributes();
+                rawVertices.push_back(Vector3(
+                    attrs.value(QLatin1String("x")).toDouble(),
+                    attrs.value(QLatin1String("y")).toDouble(),
+                    attrs.value(QLatin1String("z")).toDouble()));
+            } else if (name == QLatin1String("triangle")) {
+                const QXmlStreamAttributes attrs = reader.attributes();
+                const size_t v1 = meshVertexBase + attrs.value(QLatin1String("v1")).toULongLong();
+                const size_t v2 = meshVertexBase + attrs.value(QLatin1String("v2")).toULongLong();
+                const size_t v3 = meshVertexBase + attrs.value(QLatin1String("v3")).toULongLong();
+                if (v1 < rawVertices.size() && v2 < rawVertices.size() && v3 < rawVertices.size())
+                    rawTriangles.push_back({ v1, v2, v3 });
+            }
         }
-    }
-    if (reader.hasError()) {
-        qDebug() << "load3mf: XML parse error:" << reader.errorString();
-        return false;
+        // One malformed part should not abort the whole load; skip it and keep
+        // whatever the other parts contributed.
+        if (reader.hasError())
+            qDebug() << "load3mf: XML parse error in a part:" << reader.errorString();
     }
 
     // Weld coincident vertices and remap the triangles onto the shared indices.

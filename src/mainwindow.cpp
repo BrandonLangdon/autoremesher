@@ -21,6 +21,7 @@
  */
 #include <QAction>
 #include <QApplication>
+#include <QTimer>
 #include <QComboBox>
 #include <QDebug>
 #include <QDesktopServices>
@@ -1349,7 +1350,10 @@ void MainWindow::runHeadless()
 
     if (!objLoaded) {
         std::cerr << "Error: Failed to load " << m_currentFilename.toStdString() << std::endl;
-        QCoreApplication::quit();
+        // runHeadless() runs before app.exec(), so a plain quit() here is lost and
+        // the app idles in the event loop forever. Defer the exit so it fires once
+        // the loop is running, and return a non-zero code for the CLI.
+        QTimer::singleShot(0, qApp, []() { QCoreApplication::exit(1); });
         return;
     }
 
