@@ -303,6 +303,11 @@ void AutoRemesher::updateProgress(size_t threadIndex, float progress)
     if (nullptr == m_progressHandler)
         return;
 
+    // Serialize the whole update. Island workers call this concurrently, and
+    // both the shared m_threadProgress accumulation below and the callback (which
+    // writes stdout and emits Qt signals) are not otherwise thread-safe.
+    std::lock_guard<std::mutex> progressLock(m_progressMutex);
+
     if (progress > m_threadProgress[threadIndex])
         m_threadProgress[threadIndex] = progress;
     float islandWeightedAvg = 0.0;
@@ -407,14 +412,10 @@ bool AutoRemesher::remesh()
         struct IsotropicPhase {
             IsotropicPhase(std::vector<IslandContext>* contexts,
                 AutoRemesher* remesher,
-                std::atomic<long long>* resampleTime,
-                std::vector<Vector3>* outVertices,
-                std::vector<std::vector<size_t>>* outTriangles)
+                std::atomic<long long>* resampleTime)
                 : m_contexts(contexts)
                 , m_remesher(remesher)
                 , m_resampleTime(resampleTime)
-                , m_outVertices(outVertices)
-                , m_outTriangles(outTriangles)
             {
             }
 
@@ -432,18 +433,6 @@ bool AutoRemesher::remesh()
                     auto t1 = std::chrono::high_resolution_clock::now();
                     *m_resampleTime += std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
 
-                    // Collect isotropic mesh vertices/triangles for later preview
-                    // Must accumulate in the correct order across islands
-                    size_t vertexOffset = m_outVertices->size();
-                    for (const auto& v : ctx.vertices)
-                        m_outVertices->push_back(v);
-                    for (const auto& tri : ctx.triangles) {
-                        std::vector<size_t> offsetTri;
-                        for (auto idx : tri)
-                            offsetTri.push_back(idx + vertexOffset);
-                        m_outTriangles->push_back(offsetTri);
-                    }
-
                     m_remesher->updateProgress(i, 0.3f);
                 }
             }
@@ -452,8 +441,6 @@ bool AutoRemesher::remesh()
             std::vector<IslandContext>* m_contexts = nullptr;
             AutoRemesher* m_remesher = nullptr;
             std::atomic<long long>* m_resampleTime = nullptr;
-            std::vector<Vector3>* m_outVertices = nullptr;
-            std::vector<std::vector<size_t>>* m_outTriangles = nullptr;
         };
 
         std::atomic<long long> resampleTime(0);
@@ -461,8 +448,24 @@ bool AutoRemesher::remesh()
         m_isotropicVertices.clear();
         m_isotropicTriangles.clear();
         tbb::parallel_for(tbb::blocked_range<size_t>(0, islandContexes.size()),
-            IsotropicPhase(&islandContexes, this, &resampleTime,
-                &m_isotropicVertices, &m_isotropicTriangles));
+            IsotropicPhase(&islandContexes, this, &resampleTime));
+
+        // Collect the isotropic mesh for the [isotropic] preview sequentially,
+        // AFTER the parallel phase. Doing this inside the parallel workers meant
+        // concurrent push_back onto these shared vectors -- a data race that
+        // corrupted the heap and crashed on any multi-island mesh.
+        for (const auto& ctx : islandContexes) {
+            size_t vertexOffset = m_isotropicVertices.size();
+            for (const auto& v : ctx.vertices)
+                m_isotropicVertices.push_back(v);
+            for (const auto& tri : ctx.triangles) {
+                std::vector<size_t> offsetTri;
+                offsetTri.reserve(tri.size());
+                for (auto idx : tri)
+                    offsetTri.push_back(idx + vertexOffset);
+                m_isotropicTriangles.push_back(offsetTri);
+            }
+        }
     }
 
     class ParameterizationThread {

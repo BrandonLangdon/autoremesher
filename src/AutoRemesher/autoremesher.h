@@ -163,6 +163,10 @@ private:
     void* m_tag = nullptr;
     std::string m_currentStatus;
     mutable std::mutex m_currentStatusMutex;
+    // Island workers run updateProgress() concurrently (tbb::parallel_for over
+    // islands); this serializes the shared-state accumulation and the progress
+    // callback, which are otherwise a data race.
+    std::mutex m_progressMutex;
 
     static double calculateAverageEdgeLength(const std::vector<Vector3>& vertices,
         const std::vector<std::vector<size_t>>& faces);
