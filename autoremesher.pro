@@ -145,6 +145,9 @@ HEADERS += src/util.h
 SOURCES += src/mainwindow.cpp
 HEADERS += src/mainwindow.h
 
+SOURCES += src/meshimporter.cpp
+HEADERS += src/meshimporter.h
+
 SOURCES += src/aboutwidget.cpp
 HEADERS += src/aboutwidget.h
 
@@ -196,6 +199,9 @@ HEADERS += src/intnumberwidget.h
 
 SOURCES += src/AutoRemesher/autoremesher.cpp
 HEADERS += src/AutoRemesher/autoremesher.h
+
+SOURCES += src/AutoRemesher/externalremesher.cpp
+HEADERS += src/AutoRemesher/externalremesher.h
 
 SOURCES += src/AutoRemesher/isotropicremesher.cpp
 HEADERS += src/AutoRemesher/isotropicremesher.h
@@ -454,7 +460,11 @@ win32 {
 
 macx {
     INCLUDEPATH += /opt/homebrew/opt/tbb/include
-    LIBS += -L/opt/homebrew/opt/tbb/lib -ltbbmalloc_proxy -ltbbmalloc -ltbb
+    # NOTE: tbbmalloc_proxy (global malloc replacement) is intentionally NOT
+    # linked. On macOS it hijacks the malloc zones and races with the main
+    # thread's lazy dlopen during AppKit startup, corrupting the heap and
+    # aborting when many worker threads allocate at once (multi-island remesh).
+    LIBS += -L/opt/homebrew/opt/tbb/lib -ltbbmalloc -ltbb
 }
 unix:!macx {
     LIBS += -ltbb -lz -ldl

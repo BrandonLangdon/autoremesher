@@ -40,6 +40,8 @@ class QuadMeshGenerator;
 class FloatNumberWidget;
 class IntNumberWidget;
 class QLabel;
+class QCheckBox;
+class QPushButton;
 #ifdef Q_OS_WIN32
 class QWinTaskbarButton;
 #endif
@@ -67,7 +69,7 @@ public:
     void setHeadlessParams(const QString& inputPath, const QString& outputPath,
         int targetQuads, double edgeScaling,
         double sharpEdgeDegrees, double smoothNormalDegrees,
-        double adaptivity);
+        double adaptivity, bool useExternalRemesher = false);
     void runHeadless();
     void saveMeshToFile(const QString& filename);
 
@@ -88,7 +90,10 @@ private slots:
     void updateTitle();
     void loadModel();
     void saveMesh();
+    bool loadModelFile(const QString& filename);
     bool loadObj(const QString& filename);
+    void applyLoadedModel(std::vector<AutoRemesher::Vector3>& vertices,
+        std::vector<std::vector<size_t>>& triangles);
     void setCurrentFilename(const QString& filename);
     void checkRenderQueue();
     void renderMeshReady();
@@ -116,6 +121,7 @@ private:
     float m_sharpEdgeDegrees = 90.0;
     float m_smoothNormalDegrees = 0.0;
     float m_adaptivity = 1.0;
+    bool m_useExternalRemesher = false;
     AutoRemesher::ModelType m_modelType = AutoRemesher::ModelType::Organic;
     std::vector<AutoRemesher::Vector3> m_originalVertices;
     std::vector<std::vector<size_t>> m_originalTriangles;
@@ -140,6 +146,8 @@ private:
     FloatNumberWidget* m_sharpEdgeDegreesWidget = nullptr;
     FloatNumberWidget* m_smoothNormalDegreesWidget = nullptr;
     FloatNumberWidget* m_adaptivityWidget = nullptr;
+    QCheckBox* m_useFtetwildCheckBox = nullptr;
+    QPushButton* m_ftetwildPathButton = nullptr;
     QLabel* m_quadCountLabel = nullptr;
     QLabel* m_nonQuadCountLabel = nullptr;
     QLabel* m_vertexCountLabel = nullptr;

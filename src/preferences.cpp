@@ -44,6 +44,16 @@ void Preferences::setMainWindowSize(const QSize& size)
     m_settings.setValue("mainWindowSize", size);
 }
 
+QString Preferences::ftetwildPath() const
+{
+    return m_settings.value("ftetwildPath", QString()).toString();
+}
+
+void Preferences::setFtetwildPath(const QString& path)
+{
+    m_settings.setValue("ftetwildPath", path);
+}
+
 void Preferences::reset()
 {
     m_settings.clear();

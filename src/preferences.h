@@ -31,6 +31,8 @@ public:
     Preferences();
     QSize mainWindowSize() const;
     void setMainWindowSize(const QSize&);
+    QString ftetwildPath() const;
+    void setFtetwildPath(const QString&);
 public slots:
     void reset();
 

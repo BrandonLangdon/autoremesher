@@ -49,6 +49,7 @@ struct HeadlessParams {
     double sharpEdgeDegrees = 90.0;
     double smoothNormalDegrees = 0.0;
     double adaptivity = 1.0;
+    bool useExternalRemesher = false;
 };
 
 static HeadlessParams parseHeadlessArgs(QCommandLineParser& parser)
@@ -68,6 +69,8 @@ static HeadlessParams parseHeadlessArgs(QCommandLineParser& parser)
         params.smoothNormalDegrees = parser.value("smooth-normal").toDouble();
     if (parser.isSet("adaptivity"))
         params.adaptivity = parser.value("adaptivity").toDouble();
+    if (parser.isSet("use-ftetwild"))
+        params.useExternalRemesher = true;
     return params;
 }
 
@@ -85,8 +88,8 @@ int main(int argc, char** argv)
     parser.addVersionOption();
 
     QCommandLineOption inputOption(QStringList { "i", "input" },
-        QCoreApplication::translate("main", "Input .obj file to remesh"),
-        QCoreApplication::translate("main", "file.obj"));
+        QCoreApplication::translate("main", "Input model to remesh (.obj, .stl, .3mf)"),
+        QCoreApplication::translate("main", "file"));
     parser.addOption(inputOption);
 
     QCommandLineOption outputOption(QStringList { "o", "output" },
@@ -123,6 +126,10 @@ int main(int argc, char** argv)
         QCoreApplication::translate("main", "Curvature-adaptive quad density (default: 1.0, range: 0.0-1.0)"),
         QCoreApplication::translate("main", "value"));
     parser.addOption(adaptivityOption);
+
+    QCommandLineOption useFtetwildOption(QStringList { "use-ftetwild" },
+        QCoreApplication::translate("main", "Use fTetWild for the remesh stage (needs AUTOREMESHER_FTETWILD env var). Robust/scalable on large or messy inputs."));
+    parser.addOption(useFtetwildOption);
 
     parser.process(app);
 
@@ -209,7 +216,7 @@ int main(int argc, char** argv)
         mainWindow->setHeadlessParams(params.inputPath, params.outputPath,
             params.targetQuads, params.edgeScaling,
             params.sharpEdgeDegrees, params.smoothNormalDegrees,
-            params.adaptivity);
+            params.adaptivity, params.useExternalRemesher);
         mainWindow->runHeadless();
 
         return app.exec();

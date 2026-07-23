@@ -36,6 +36,7 @@ public:
         double adaptivity = 1.0;
         double sharpEdgeDegrees = 90.0;
         double smoothNormalDegrees = 0.0;
+        bool useExternalRemesher = false;
     };
 
     QuadMeshGenerator(const std::vector<AutoRemesher::Vector3>& vertices,

@@ -21,6 +21,7 @@
  */
 #include <QAction>
 #include <QApplication>
+#include <QTimer>
 #include <QComboBox>
 #include <QDebug>
 #include <QDesktopServices>
@@ -30,6 +31,8 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QImage>
+#include <QCheckBox>
+#include <QFileInfo>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -58,6 +61,7 @@
 #include "theme.h"
 #include "util.h"
 #include "version.h"
+#include "meshimporter.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
@@ -279,6 +283,42 @@ MainWindow::MainWindow()
         m_targetScaling = value;
     });
 
+    // Optional fTetWild remesh stage. The stored binary path is exported so the
+    // AutoRemesher core (which locates fTetWild via AUTOREMESHER_FTETWILD) finds it.
+    const QString storedFtetwildPath = Preferences::instance().ftetwildPath();
+    if (!storedFtetwildPath.isEmpty())
+        qputenv("AUTOREMESHER_FTETWILD", storedFtetwildPath.toUtf8());
+
+    m_useFtetwildCheckBox = new QCheckBox(tr("Use fTetWild remesher"));
+    m_useFtetwildCheckBox->setChecked(m_useExternalRemesher);
+    m_useFtetwildCheckBox->setToolTip(tr("Replace the built-in remesher with fTetWild. Far more robust and scalable on large or messy meshes (STL/3MF prints), at higher fixed cost on small models. Requires the fTetWild binary to be set below."));
+    connect(m_useFtetwildCheckBox, &QCheckBox::toggled, [=](bool checked) {
+        m_useExternalRemesher = checked;
+    });
+
+    m_ftetwildPathButton = new QPushButton;
+    m_ftetwildPathButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto updateFtetwildPathButton = [this]() {
+        const QString path = Preferences::instance().ftetwildPath();
+        if (path.isEmpty()) {
+            m_ftetwildPathButton->setText(tr("Set fTetWild binary…"));
+            m_ftetwildPathButton->setToolTip(tr("No fTetWild binary set; the checkbox falls back to the built-in remesher."));
+        } else {
+            m_ftetwildPathButton->setText(tr("fTetWild: %1").arg(QFileInfo(path).fileName()));
+            m_ftetwildPathButton->setToolTip(path);
+        }
+    };
+    updateFtetwildPathButton();
+    connect(m_ftetwildPathButton, &QPushButton::clicked, this, [this, updateFtetwildPathButton]() {
+        QString filename = QFileDialog::getOpenFileName(this, tr("Select fTetWild binary (FloatTetwild_bin)"),
+            Preferences::instance().ftetwildPath());
+        if (filename.isEmpty())
+            return;
+        Preferences::instance().setFtetwildPath(filename);
+        qputenv("AUTOREMESHER_FTETWILD", filename.toUtf8());
+        updateFtetwildPathButton();
+    });
+
     //m_modelTypeSelectBox = new QComboBox;
     //m_modelTypeSelectBox->addItem(tr("Organic"));
     //m_modelTypeSelectBox->addItem(tr("Hard surface"));
@@ -315,6 +355,8 @@ MainWindow::MainWindow()
     controlsLayout->addWidget(m_adaptivityWidget);
     controlsLayout->addWidget(m_targetQuadCountWidget);
     controlsLayout->addWidget(m_targetScalingWidget);
+    controlsLayout->addWidget(m_useFtetwildCheckBox);
+    controlsLayout->addWidget(m_ftetwildPathButton);
     //controlsLayout->addWidget(m_modelTypeSelectBox);
 
     // Result mesh stats (hidden until a mesh is generated)
@@ -425,6 +467,8 @@ void MainWindow::updateButtonStates()
         m_sharpEdgeDegreesWidget->setEnabled(true);
         m_smoothNormalDegreesWidget->setEnabled(true);
         m_adaptivityWidget->setEnabled(true);
+        m_useFtetwildCheckBox->setEnabled(true);
+        m_ftetwildPathButton->setEnabled(true);
         //m_modelTypeSelectBox->setEnabled(true);
         if (nullptr != m_remeshedQuads) {
             m_saveMeshButton->show();
@@ -447,6 +491,8 @@ void MainWindow::updateButtonStates()
         m_sharpEdgeDegreesWidget->setDisabled(true);
         m_smoothNormalDegreesWidget->setDisabled(true);
         m_adaptivityWidget->setDisabled(true);
+        m_useFtetwildCheckBox->setDisabled(true);
+        m_ftetwildPathButton->setDisabled(true);
         //m_modelTypeSelectBox->setDisabled(true);
     }
 
@@ -477,7 +523,59 @@ bool MainWindow::loadObj(const QString& filename)
         return false;
     }
 
-    // Reset preview state for new model
+    std::vector<AutoRemesher::Vector3> vertices(attributes.vertices.size() / 3);
+    for (size_t i = 0, j = 0; i < vertices.size(); ++i) {
+        auto& dest = vertices[i];
+        dest.setX(attributes.vertices[j++]);
+        dest.setY(attributes.vertices[j++]);
+        dest.setZ(attributes.vertices[j++]);
+    }
+
+    std::vector<std::vector<size_t>> triangles;
+    for (const auto& shape : shapes) {
+        for (size_t i = 0; i < shape.mesh.indices.size(); i += 3) {
+            triangles.push_back(std::vector<size_t> {
+                (size_t)shape.mesh.indices[i + 0].vertex_index,
+                (size_t)shape.mesh.indices[i + 1].vertex_index,
+                (size_t)shape.mesh.indices[i + 2].vertex_index });
+        }
+    }
+
+    applyLoadedModel(vertices, triangles);
+    return true;
+}
+
+// Dispatch to the right loader by file extension. Shared by the GUI Open action
+// and the headless CLI path so both accept the same set of formats.
+bool MainWindow::loadModelFile(const QString& filename)
+{
+    const QString lower = filename.toLower();
+    if (lower.endsWith(".obj"))
+        return loadObj(filename);
+
+    std::vector<AutoRemesher::Vector3> vertices;
+    std::vector<std::vector<size_t>> triangles;
+    bool loaded = false;
+    if (lower.endsWith(".stl"))
+        loaded = MeshImporter::loadStl(filename, vertices, triangles);
+    else if (lower.endsWith(".3mf"))
+        loaded = MeshImporter::load3mf(filename, vertices, triangles);
+    else {
+        qDebug() << "Unsupported input format:" << filename;
+        return false;
+    }
+    if (!loaded)
+        return false;
+
+    applyLoadedModel(vertices, triangles);
+    return true;
+}
+
+// Reset preview state and adopt a freshly loaded mesh. Every loader funnels
+// through here so the pipeline sees one representation regardless of format.
+void MainWindow::applyLoadedModel(std::vector<AutoRemesher::Vector3>& vertices,
+    std::vector<std::vector<size_t>>& triangles)
+{
     delete m_sourceRenderMesh;
     m_sourceRenderMesh = nullptr;
     delete m_isotropicRenderMesh;
@@ -501,23 +599,8 @@ bool MainWindow::loadObj(const QString& filename)
     m_previewParamButton->setChecked(false);
     m_previewRemeshButton->setChecked(false);
 
-    m_originalVertices.resize(attributes.vertices.size() / 3);
-    for (size_t i = 0, j = 0; i < m_originalVertices.size(); ++i) {
-        auto& dest = m_originalVertices[i];
-        dest.setX(attributes.vertices[j++]);
-        dest.setY(attributes.vertices[j++]);
-        dest.setZ(attributes.vertices[j++]);
-    }
-
-    m_originalTriangles.clear();
-    for (const auto& shape : shapes) {
-        for (size_t i = 0; i < shape.mesh.indices.size(); i += 3) {
-            m_originalTriangles.push_back(std::vector<size_t> {
-                (size_t)shape.mesh.indices[i + 0].vertex_index,
-                (size_t)shape.mesh.indices[i + 1].vertex_index,
-                (size_t)shape.mesh.indices[i + 2].vertex_index });
-        }
-    }
+    m_originalVertices = std::move(vertices);
+    m_originalTriangles = std::move(triangles);
 
     qDebug() << "m_originalVertices.size():" << m_originalVertices.size();
     qDebug() << "m_originalTriangles.size():" << m_originalTriangles.size();
@@ -525,8 +608,6 @@ bool MainWindow::loadObj(const QString& filename)
     m_renderQueue.push({ m_originalVertices,
         m_originalTriangles });
     checkRenderQueue();
-
-    return true;
 }
 
 void MainWindow::loadModel()
@@ -553,12 +634,12 @@ void MainWindow::loadModel()
     }
 
     QString filename = QFileDialog::getOpenFileName(this, QString(), QString(),
-        tr("Wavefront (*.obj)"));
+        tr("3D Models (*.obj *.stl *.3mf);;Wavefront (*.obj);;STL (*.stl);;3MF (*.3mf)"));
     if (filename.isEmpty())
         return;
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    bool objLoaded = loadObj(filename);
+    bool objLoaded = loadModelFile(filename);
     QApplication::restoreOverrideCursor();
 
     if (objLoaded) {
@@ -1267,7 +1348,7 @@ static ModelShaderMesh* buildUvRenderMesh(
 void MainWindow::setHeadlessParams(const QString& inputPath, const QString& outputPath,
     int targetQuads, double edgeScaling,
     double sharpEdgeDegrees, double smoothNormalDegrees,
-    double adaptivity)
+    double adaptivity, bool useExternalRemesher)
 {
     m_headlessMode = true;
     m_headlessOutputPath = outputPath;
@@ -1277,6 +1358,7 @@ void MainWindow::setHeadlessParams(const QString& inputPath, const QString& outp
     m_sharpEdgeDegrees = static_cast<float>(sharpEdgeDegrees);
     m_smoothNormalDegrees = static_cast<float>(smoothNormalDegrees);
     m_adaptivity = static_cast<float>(adaptivity);
+    m_useExternalRemesher = useExternalRemesher;
 }
 
 void MainWindow::saveMeshToFile(const QString& filename)
@@ -1308,12 +1390,15 @@ void MainWindow::runHeadless()
 
     // Load the input file and generate the quad mesh without UI dialogs
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    bool objLoaded = loadObj(m_currentFilename);
+    bool objLoaded = loadModelFile(m_currentFilename);
     QApplication::restoreOverrideCursor();
 
     if (!objLoaded) {
         std::cerr << "Error: Failed to load " << m_currentFilename.toStdString() << std::endl;
-        QCoreApplication::quit();
+        // runHeadless() runs before app.exec(), so a plain quit() here is lost and
+        // the app idles in the event loop forever. Defer the exit so it fires once
+        // the loop is running, and return a non-zero code for the CLI.
+        QTimer::singleShot(0, qApp, []() { QCoreApplication::exit(1); });
         return;
     }
 
@@ -1337,6 +1422,7 @@ void MainWindow::runHeadless()
     parameters.adaptivity = m_adaptivity;
     parameters.sharpEdgeDegrees = m_sharpEdgeDegrees;
     parameters.smoothNormalDegrees = m_smoothNormalDegrees;
+    parameters.useExternalRemesher = m_useExternalRemesher;
 
     m_quadMeshGenerator = new QuadMeshGenerator(m_originalVertices, m_originalTriangles);
     connect(m_quadMeshGenerator, &QuadMeshGenerator::reportProgress, this, &MainWindow::updateProgress);
@@ -1378,6 +1464,7 @@ void MainWindow::generateQuadMesh()
     parameters.adaptivity = m_adaptivity;
     parameters.sharpEdgeDegrees = m_sharpEdgeDegrees;
     parameters.smoothNormalDegrees = m_smoothNormalDegrees;
+    parameters.useExternalRemesher = m_useExternalRemesher;
 
     m_quadMeshGenerator = new QuadMeshGenerator(m_originalVertices, m_originalTriangles);
     connect(m_quadMeshGenerator, &QuadMeshGenerator::reportProgress, this, &MainWindow::updateProgress);

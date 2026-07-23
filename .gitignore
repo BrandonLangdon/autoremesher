@@ -43,3 +43,5 @@ qrc_*.cpp
 .DS_Store
 
 moc/
+# Local sample models for testing (not versioned)
+TestModels/
