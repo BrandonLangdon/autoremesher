@@ -36,6 +36,8 @@
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMoveEvent>
+#include <QResizeEvent>
 #include <QPushButton>
 #include <QTextBrowser>
 #include <QTextStream>
@@ -43,6 +45,7 @@
 #include <QUrl>
 #include <QUuid>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #ifdef Q_OS_WIN32
@@ -56,12 +59,16 @@
 #include "logbrowser.h"
 #include "mainwindow.h"
 #include "preferences.h"
+#include "preferenceswidget.h"
 #include "quadmeshgenerator.h"
 #include "rendermeshgenerator.h"
+#include "surfaceremeshgenerator.h"
+#include <AutoRemesher/ExternalRemesher>
 #include "theme.h"
 #include "util.h"
 #include "version.h"
 #include "meshimporter.h"
+#include "waitingspinnerwidget.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
@@ -106,6 +113,29 @@ MainWindow::MainWindow()
     containerLayout->addWidget(graphicsWidget);
     containerWidget->setLayout(containerLayout);
     containerWidget->setMinimumSize(400, 400);
+
+    QMenu* fileMenu = menuBar()->addMenu(tr("&File"));
+
+    QAction* openAction = new QAction(tr("Open…"), this);
+    openAction->setShortcut(QKeySequence::Open);
+    connect(openAction, &QAction::triggered, this, &MainWindow::loadModel);
+    fileMenu->addAction(openAction);
+
+    QAction* saveAction = new QAction(tr("Save…"), this);
+    saveAction->setShortcut(QKeySequence::Save);
+    connect(saveAction, &QAction::triggered, this, &MainWindow::saveMesh);
+    fileMenu->addAction(saveAction);
+
+    fileMenu->addSeparator();
+
+    // On macOS, PreferencesRole relocates this to the application menu (Cmd+,);
+    // elsewhere it stays under File. Either way the fTetWild binary path and
+    // parameters live here rather than in the controls panel.
+    QAction* preferencesAction = new QAction(tr("Preferences…"), this);
+    preferencesAction->setMenuRole(QAction::PreferencesRole);
+    preferencesAction->setShortcut(QKeySequence::Preferences);
+    connect(preferencesAction, &QAction::triggered, this, &MainWindow::openPreferences);
+    fileMenu->addAction(preferencesAction);
 
     QMenu* helpMenu = menuBar()->addMenu(tr("&Help"));
 
@@ -158,6 +188,29 @@ MainWindow::MainWindow()
 
     graphicsWidget->setModelWidget(m_modelRenderWidget);
     containerWidget->setModelWidget(m_modelRenderWidget);
+
+    // Busy indicator: an animated, captioned spinner centered on the viewport.
+    // Long operations disable the buttons, which alone reads as "hung" — the
+    // spinning motion plus a live stage caption makes it obvious work is running.
+    //
+    // It must be a top-level frameless translucent window, NOT a child of the
+    // viewport: the viewport is a QOpenGLWidget, and a sibling overlay's
+    // translucent pixels composite against black instead of the GL content (the
+    // scrim vanished and the ring rendered muddy grey). A top-level window is
+    // composited by the OS and renders correctly over the GL surface.
+    m_viewportContainer = containerWidget;
+    m_busySpinner = new WaitingSpinnerWidget(Qt::NonModal, this, /*centerOnParent*/ false,
+        /*disableParentWhenSpinning*/ false);
+    m_busySpinner->setAttribute(Qt::WA_ShowWithoutActivating);
+    m_busySpinner->setRoundness(70.0);
+    // Keep the whole ring bright; a modest fade on the trailing segment is all
+    // that's needed to read as rotating (a uniform ring would look static).
+    m_busySpinner->setMinimumTrailOpacity(60.0);
+    m_busySpinner->setTrailFadePercentage(80.0);
+    m_busySpinner->setRevolutionsPerSecond(1.2);
+    // Color, size, and scrim contrast are user-configurable (Preferences).
+    applySpinnerAppearance();
+    m_busySpinner->hide(); // only visible while spinning (start() shows it)
 
     // ============================================================
     // PREVIEW BUTTONS — [source] [isotropic] [param] [remesh]
@@ -283,41 +336,11 @@ MainWindow::MainWindow()
         m_targetScaling = value;
     });
 
-    // Optional fTetWild remesh stage. The stored binary path is exported so the
+    // The fTetWild binary path (set in Preferences) is exported so the
     // AutoRemesher core (which locates fTetWild via AUTOREMESHER_FTETWILD) finds it.
     const QString storedFtetwildPath = Preferences::instance().ftetwildPath();
     if (!storedFtetwildPath.isEmpty())
         qputenv("AUTOREMESHER_FTETWILD", storedFtetwildPath.toUtf8());
-
-    m_useFtetwildCheckBox = new QCheckBox(tr("Use fTetWild remesher"));
-    m_useFtetwildCheckBox->setChecked(m_useExternalRemesher);
-    m_useFtetwildCheckBox->setToolTip(tr("Replace the built-in remesher with fTetWild. Far more robust and scalable on large or messy meshes (STL/3MF prints), at higher fixed cost on small models. Requires the fTetWild binary to be set below."));
-    connect(m_useFtetwildCheckBox, &QCheckBox::toggled, [=](bool checked) {
-        m_useExternalRemesher = checked;
-    });
-
-    m_ftetwildPathButton = new QPushButton;
-    m_ftetwildPathButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    auto updateFtetwildPathButton = [this]() {
-        const QString path = Preferences::instance().ftetwildPath();
-        if (path.isEmpty()) {
-            m_ftetwildPathButton->setText(tr("Set fTetWild binary…"));
-            m_ftetwildPathButton->setToolTip(tr("No fTetWild binary set; the checkbox falls back to the built-in remesher."));
-        } else {
-            m_ftetwildPathButton->setText(tr("fTetWild: %1").arg(QFileInfo(path).fileName()));
-            m_ftetwildPathButton->setToolTip(path);
-        }
-    };
-    updateFtetwildPathButton();
-    connect(m_ftetwildPathButton, &QPushButton::clicked, this, [this, updateFtetwildPathButton]() {
-        QString filename = QFileDialog::getOpenFileName(this, tr("Select fTetWild binary (FloatTetwild_bin)"),
-            Preferences::instance().ftetwildPath());
-        if (filename.isEmpty())
-            return;
-        Preferences::instance().setFtetwildPath(filename);
-        qputenv("AUTOREMESHER_FTETWILD", filename.toUtf8());
-        updateFtetwildPathButton();
-    });
 
     //m_modelTypeSelectBox = new QComboBox;
     //m_modelTypeSelectBox->addItem(tr("Organic"));
@@ -327,23 +350,32 @@ MainWindow::MainWindow()
     //});
     //m_modelTypeSelectBox->setCurrentIndex(AutoRemesher::ModelType::HardSurface == m_modelType ? 1 : 0);
 
-    // --- Action buttons ---
+    // --- Action buttons (explicit workflow steps) ---
     QPushButton* loadModelButton = new QPushButton(tr("Open"));
     loadModelButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     connect(loadModelButton, &QPushButton::clicked, this, &MainWindow::loadModel);
     m_loadModelButton = loadModelButton;
+
+    // Optional step 1: replace the working surface with fTetWild's clean output.
+    QPushButton* ftetwildButton = new QPushButton(tr("Run fTetWild"));
+    ftetwildButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    ftetwildButton->setToolTip(tr("Rebuild the surface with fTetWild before quad remeshing. Robust and scalable on large or messy meshes (STL/3MF prints). Set the binary and parameters in Preferences."));
+    ftetwildButton->hide();
+    connect(ftetwildButton, &QPushButton::clicked, this, &MainWindow::runFtetwild);
+    m_ftetwildButton = ftetwildButton;
+
+    // Step 2: quad remesh the working surface.
+    QPushButton* remeshButton = new QPushButton(tr("Remesh to Quads"));
+    remeshButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    remeshButton->hide();
+    connect(remeshButton, &QPushButton::clicked, this, &MainWindow::generateQuadMesh);
+    m_remeshButton = remeshButton;
 
     QPushButton* saveMeshButton = new QPushButton(tr("Save"));
     saveMeshButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     saveMeshButton->hide();
     connect(saveMeshButton, &QPushButton::clicked, this, &MainWindow::saveMesh);
     m_saveMeshButton = saveMeshButton;
-
-    QPushButton* regenerateButton = new QPushButton(tr("Regenerate"));
-    regenerateButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    regenerateButton->hide();
-    connect(regenerateButton, &QPushButton::clicked, this, &MainWindow::generateQuadMesh);
-    m_regenerateButton = regenerateButton;
 
     // --- Controls panel layout ---
     QVBoxLayout* controlsLayout = new QVBoxLayout;
@@ -355,9 +387,13 @@ MainWindow::MainWindow()
     controlsLayout->addWidget(m_adaptivityWidget);
     controlsLayout->addWidget(m_targetQuadCountWidget);
     controlsLayout->addWidget(m_targetScalingWidget);
-    controlsLayout->addWidget(m_useFtetwildCheckBox);
-    controlsLayout->addWidget(m_ftetwildPathButton);
     //controlsLayout->addWidget(m_modelTypeSelectBox);
+
+    // Source mesh stats, shown after Open (before any remesh).
+    m_sourceStatsLabel = new QLabel(this);
+    m_sourceStatsLabel->setStyleSheet("color: #cfe8d8; font-size: 11px; padding: 4px 0;");
+    m_sourceStatsLabel->setWordWrap(true);
+    m_sourceStatsLabel->hide();
 
     // Result mesh stats (hidden until a mesh is generated)
     m_quadCountLabel = new QLabel(this);
@@ -372,13 +408,28 @@ MainWindow::MainWindow()
     m_vertexCountLabel->setStyleSheet("color: #ffffff; font-size: 11px; padding: 2px 0;");
     m_vertexCountLabel->hide();
 
-    // Toolbar rows at bottom
-    QHBoxLayout* toolbarLayout = new QHBoxLayout;
-    toolbarLayout->setSpacing(4);
-    toolbarLayout->setContentsMargins(0, 12, 0, 0);
-    toolbarLayout->addWidget(loadModelButton, 1);
-    toolbarLayout->addWidget(regenerateButton, 1);
-    controlsLayout->addLayout(toolbarLayout);
+    // Source stats sit just above the action buttons so Open surfaces them.
+    controlsLayout->addWidget(m_sourceStatsLabel);
+
+    // Stacked action buttons read as sequential steps:
+    // Open → (optional) Run fTetWild → Remesh to Quads → Save.
+    QHBoxLayout* openLayout = new QHBoxLayout;
+    openLayout->setSpacing(0);
+    openLayout->setContentsMargins(0, 12, 0, 0);
+    openLayout->addWidget(loadModelButton, 1);
+    controlsLayout->addLayout(openLayout);
+
+    QHBoxLayout* ftetwildLayout = new QHBoxLayout;
+    ftetwildLayout->setSpacing(0);
+    ftetwildLayout->setContentsMargins(0, 2, 0, 0);
+    ftetwildLayout->addWidget(ftetwildButton, 1);
+    controlsLayout->addLayout(ftetwildLayout);
+
+    QHBoxLayout* remeshLayout = new QHBoxLayout;
+    remeshLayout->setSpacing(0);
+    remeshLayout->setContentsMargins(0, 2, 0, 0);
+    remeshLayout->addWidget(remeshButton, 1);
+    controlsLayout->addLayout(remeshLayout);
 
     QHBoxLayout* saveLayout = new QHBoxLayout;
     saveLayout->setSpacing(0);
@@ -460,39 +511,50 @@ MainWindow::MainWindow()
 
 void MainWindow::updateButtonStates()
 {
-    if (nullptr == m_quadMeshGenerator && !m_quadMeshResultIsDirty) {
+    const bool busy = (nullptr != m_quadMeshGenerator) || (nullptr != m_surfaceRemeshGenerator)
+        || m_quadMeshResultIsDirty;
+    const bool hasWorkingMesh = !m_workingVertices.empty();
+
+    if (!busy) {
         m_loadModelButton->setEnabled(true);
         m_targetScalingWidget->setEnabled(true);
         m_targetQuadCountWidget->setEnabled(true);
         m_sharpEdgeDegreesWidget->setEnabled(true);
         m_smoothNormalDegreesWidget->setEnabled(true);
         m_adaptivityWidget->setEnabled(true);
-        m_useFtetwildCheckBox->setEnabled(true);
-        m_ftetwildPathButton->setEnabled(true);
         //m_modelTypeSelectBox->setEnabled(true);
-        if (nullptr != m_remeshedQuads) {
+
+        // "Run fTetWild" appears once a mesh is loaded and a binary is configured.
+        if (hasWorkingMesh && AutoRemesher::ExternalRemesher::isConfigured()) {
+            m_ftetwildButton->show();
+            m_ftetwildButton->setEnabled(true);
+        } else {
+            m_ftetwildButton->hide();
+        }
+
+        if (hasWorkingMesh) {
+            m_remeshButton->show();
+            m_remeshButton->setEnabled(true);
+        } else {
+            m_remeshButton->hide();
+        }
+
+        if (nullptr != m_remeshedQuads)
             m_saveMeshButton->show();
-        } else {
+        else
             m_saveMeshButton->hide();
-        }
-        if (!m_originalVertices.empty()) {
-            m_regenerateButton->show();
-            m_regenerateButton->setEnabled(true);
-        } else {
-            m_regenerateButton->hide();
-        }
+
         m_progressBar->hide();
     } else {
         m_loadModelButton->setEnabled(false);
         m_saveMeshButton->hide();
-        m_regenerateButton->setEnabled(false);
+        m_ftetwildButton->setEnabled(false);
+        m_remeshButton->setEnabled(false);
         m_targetScalingWidget->setDisabled(true);
         m_targetQuadCountWidget->setDisabled(true);
         m_sharpEdgeDegreesWidget->setDisabled(true);
         m_smoothNormalDegreesWidget->setDisabled(true);
         m_adaptivityWidget->setDisabled(true);
-        m_useFtetwildCheckBox->setDisabled(true);
-        m_ftetwildPathButton->setDisabled(true);
         //m_modelTypeSelectBox->setDisabled(true);
     }
 
@@ -571,10 +633,10 @@ bool MainWindow::loadModelFile(const QString& filename)
     return true;
 }
 
-// Reset preview state and adopt a freshly loaded mesh. Every loader funnels
-// through here so the pipeline sees one representation regardless of format.
-void MainWindow::applyLoadedModel(std::vector<AutoRemesher::Vector3>& vertices,
-    std::vector<std::vector<size_t>>& triangles)
+// Drop every mesh derived from a previous input/working surface: the preview
+// render meshes, the intermediate isotropic data, and the quad result. Shared by
+// Open (new file) and Run fTetWild (new working surface).
+void MainWindow::resetDerivedState()
 {
     delete m_sourceRenderMesh;
     m_sourceRenderMesh = nullptr;
@@ -593,21 +655,79 @@ void MainWindow::applyLoadedModel(std::vector<AutoRemesher::Vector3>& vertices,
     m_remeshedVertices = nullptr;
     delete m_remeshedQuads;
     m_remeshedQuads = nullptr;
+    m_quadCountLabel->hide();
+    m_nonQuadCountLabel->hide();
+    m_vertexCountLabel->hide();
     m_previewMode = PreviewSource;
     m_previewSourceButton->setChecked(false);
     m_previewIsotropicButton->setChecked(false);
     m_previewParamButton->setChecked(false);
     m_previewRemeshButton->setChecked(false);
+}
+
+// Reset preview state and adopt a freshly loaded mesh. Every loader funnels
+// through here so the pipeline sees one representation regardless of format.
+// Per the step-based workflow, Open only loads and shows stats — it does not
+// remesh; the user drives that with the Run fTetWild / Remesh to Quads buttons.
+void MainWindow::applyLoadedModel(std::vector<AutoRemesher::Vector3>& vertices,
+    std::vector<std::vector<size_t>>& triangles)
+{
+    resetDerivedState();
 
     m_originalVertices = std::move(vertices);
     m_originalTriangles = std::move(triangles);
+    // A freshly loaded model starts as its own working surface (no fTetWild yet).
+    m_ftetwildApplied = false;
+    m_workingVertices = m_originalVertices;
+    m_workingTriangles = m_originalTriangles;
 
     qDebug() << "m_originalVertices.size():" << m_originalVertices.size();
     qDebug() << "m_originalTriangles.size():" << m_originalTriangles.size();
 
-    m_renderQueue.push({ m_originalVertices,
-        m_originalTriangles });
+    showWorkingMesh();
+}
+
+// Render the current working surface (original, or the fTetWild output) and
+// refresh the source stats readout.
+void MainWindow::showWorkingMesh()
+{
+    m_renderQueue.push({ m_workingVertices, m_workingTriangles });
     checkRenderQueue();
+    updateSourceStats();
+}
+
+void MainWindow::updateSourceStats()
+{
+    if (m_workingVertices.empty()) {
+        m_sourceStatsLabel->hide();
+        return;
+    }
+
+    double minX = std::numeric_limits<double>::max();
+    double maxX = std::numeric_limits<double>::lowest();
+    double minY = std::numeric_limits<double>::max();
+    double maxY = std::numeric_limits<double>::lowest();
+    double minZ = std::numeric_limits<double>::max();
+    double maxZ = std::numeric_limits<double>::lowest();
+    for (const auto& v : m_workingVertices) {
+        minX = std::min(minX, v.x());
+        maxX = std::max(maxX, v.x());
+        minY = std::min(minY, v.y());
+        maxY = std::max(maxY, v.y());
+        minZ = std::min(minZ, v.z());
+        maxZ = std::max(maxZ, v.z());
+    }
+
+    const QString origin = m_ftetwildApplied ? tr("fTetWild surface") : tr("Source");
+    m_sourceStatsLabel->setText(
+        tr("%1: %2 verts · %3 tris\nSize: %4 × %5 × %6")
+            .arg(origin)
+            .arg(m_workingVertices.size())
+            .arg(m_workingTriangles.size())
+            .arg(maxX - minX, 0, 'g', 4)
+            .arg(maxY - minY, 0, 'g', 4)
+            .arg(maxZ - minZ, 0, 'g', 4));
+    m_sourceStatsLabel->show();
 }
 
 void MainWindow::loadModel()
@@ -644,8 +764,9 @@ void MainWindow::loadModel()
 
     if (objLoaded) {
         setCurrentFilename(filename);
-
-        generateQuadMesh();
+        // Open only loads and presents the mesh; the user drives remeshing with
+        // the Run fTetWild / Remesh to Quads buttons.
+        updateButtonStates();
     }
 }
 
@@ -751,9 +872,80 @@ void MainWindow::updateProgressDetailed(float progress, const QString& status)
     m_progressBar->setValue((int)(progress * 100));
     m_progressBar->show();
 
+    // Mirror the live stage into the spinner caption so the user sees both what
+    // is happening and that it is still moving. The quad stage reports a real
+    // fraction, so append a percentage; 0 and 1 are stage boundaries, not steps.
+    if (m_busySpinner && m_busySpinner->isSpinning()) {
+        QString caption = status.isEmpty() ? tr("Working…") : status;
+        if (progress > 0.0f && progress < 1.0f)
+            caption += QStringLiteral("  %1%").arg((int)(progress * 100));
+        m_busySpinner->setText(caption);
+        // The widget resizes to fit the caption; keep it centered on the viewport.
+        positionBusySpinner();
+    }
+
     if (progress >= 1.0f) {
         m_progressBar->hide();
     }
+}
+
+// Pull the spinner's color, size, and scrim contrast from Preferences. Called at
+// construction and before each run so changes take effect without a restart.
+void MainWindow::applySpinnerAppearance()
+{
+    if (nullptr == m_busySpinner)
+        return;
+
+    const QColor color = Preferences::instance().busySpinnerColor();
+    double scale = Preferences::instance().busySpinnerScale();
+    scale = std::min(std::max(scale, 0.5), 3.0);
+    int contrast = Preferences::instance().busySpinnerContrast();
+    contrast = std::min(std::max(contrast, 0), 100);
+
+    // The chosen color drives both the ring and the caption; a near-black scrim
+    // (opacity = contrast) sits behind them for a consistent backdrop.
+    m_busySpinner->setColor(color);
+    m_busySpinner->setTextColor(color);
+    QColor scrim(18, 18, 18);
+    scrim.setAlpha(static_cast<int>(contrast / 100.0 * 235.0));
+    m_busySpinner->setBackgroundColor(scrim);
+
+    m_busySpinner->setNumberOfLines(13);
+    m_busySpinner->setLineLength(static_cast<int>(std::lround(30 * scale)));
+    m_busySpinner->setLineWidth(static_cast<int>(std::lround(6 * scale)));
+    m_busySpinner->setInnerRadius(static_cast<int>(std::lround(30 * scale)));
+}
+
+// Center the top-level spinner over the viewport in global screen coordinates.
+void MainWindow::positionBusySpinner()
+{
+    if (nullptr == m_busySpinner || nullptr == m_viewportContainer)
+        return;
+    const QRect viewport(m_viewportContainer->mapToGlobal(QPoint(0, 0)),
+        m_viewportContainer->size());
+    const QSize s = m_busySpinner->size();
+    m_busySpinner->move(viewport.center().x() - s.width() / 2,
+        viewport.center().y() - s.height() / 2);
+}
+
+// Show the animated, captioned busy indicator over the viewport.
+void MainWindow::startBusy(const QString& message)
+{
+    if (nullptr == m_busySpinner)
+        return;
+    applySpinnerAppearance();
+    m_busySpinner->setText(message);
+    m_busySpinner->start();
+    positionBusySpinner();
+    m_busySpinner->raise();
+}
+
+void MainWindow::stopBusy()
+{
+    if (nullptr == m_busySpinner)
+        return;
+    m_busySpinner->stop();
+    m_busySpinner->setText(QString());
 }
 
 MainWindow::~MainWindow()
@@ -849,6 +1041,16 @@ void MainWindow::showAbout()
     g_aboutWidget->raise();
 }
 
+void MainWindow::openPreferences()
+{
+    PreferencesWidget dialog(this);
+    // Changing the fTetWild binary can enable/disable the Run fTetWild button.
+    connect(&dialog, &PreferencesWidget::ftetwildConfigurationChanged,
+        this, &MainWindow::updateButtonStates);
+    dialog.exec();
+    updateButtonStates();
+}
+
 void MainWindow::showEvent(QShowEvent* event)
 {
 #ifdef Q_OS_WIN32
@@ -857,6 +1059,21 @@ void MainWindow::showEvent(QShowEvent* event)
 #endif
 
     event->accept();
+}
+
+void MainWindow::moveEvent(QMoveEvent* event)
+{
+    QMainWindow::moveEvent(event);
+    // The spinner is a top-level window, so it must follow the main window.
+    if (m_busySpinner && m_busySpinner->isSpinning())
+        positionBusySpinner();
+}
+
+void MainWindow::resizeEvent(QResizeEvent* event)
+{
+    QMainWindow::resizeEvent(event);
+    if (m_busySpinner && m_busySpinner->isSpinning())
+        positionBusySpinner();
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)
@@ -1422,9 +1639,11 @@ void MainWindow::runHeadless()
     parameters.adaptivity = m_adaptivity;
     parameters.sharpEdgeDegrees = m_sharpEdgeDegrees;
     parameters.smoothNormalDegrees = m_smoothNormalDegrees;
+    // Headless keeps the one-shot in-core fTetWild path (--use-ftetwild); the
+    // working mesh equals the loaded original here since no GUI step runs.
     parameters.useExternalRemesher = m_useExternalRemesher;
 
-    m_quadMeshGenerator = new QuadMeshGenerator(m_originalVertices, m_originalTriangles);
+    m_quadMeshGenerator = new QuadMeshGenerator(m_workingVertices, m_workingTriangles);
     connect(m_quadMeshGenerator, &QuadMeshGenerator::reportProgress, this, &MainWindow::updateProgress);
     connect(m_quadMeshGenerator, &QuadMeshGenerator::reportProgressDetailed, this, &MainWindow::updateProgressDetailed);
     m_quadMeshGenerator->setParameters(parameters);
@@ -1453,6 +1672,7 @@ void MainWindow::generateQuadMesh()
 
     m_progressBar->setValue(0);
     m_progressBar->show();
+    startBusy(tr("Remeshing to quads…"));
 
     QThread* thread = new QThread;
 
@@ -1464,9 +1684,11 @@ void MainWindow::generateQuadMesh()
     parameters.adaptivity = m_adaptivity;
     parameters.sharpEdgeDegrees = m_sharpEdgeDegrees;
     parameters.smoothNormalDegrees = m_smoothNormalDegrees;
-    parameters.useExternalRemesher = m_useExternalRemesher;
+    // fTetWild is a separate, explicit step in the GUI (Run fTetWild), so the
+    // quad remesh always runs the built-in pipeline on the working surface.
+    parameters.useExternalRemesher = false;
 
-    m_quadMeshGenerator = new QuadMeshGenerator(m_originalVertices, m_originalTriangles);
+    m_quadMeshGenerator = new QuadMeshGenerator(m_workingVertices, m_workingTriangles);
     connect(m_quadMeshGenerator, &QuadMeshGenerator::reportProgress, this, &MainWindow::updateProgress);
     connect(m_quadMeshGenerator, &QuadMeshGenerator::reportProgressDetailed, this, &MainWindow::updateProgressDetailed);
     m_quadMeshGenerator->setParameters(parameters);
@@ -1476,6 +1698,89 @@ void MainWindow::generateQuadMesh()
     connect(m_quadMeshGenerator, &QuadMeshGenerator::finished, thread, &QThread::quit);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
     thread->start();
+
+    updateButtonStates();
+    updateTitle();
+}
+
+// Standalone fTetWild pass over the whole loaded mesh (always the immutable
+// original, so re-running is idempotent). On success its clean surface becomes
+// the working mesh that Remesh to Quads consumes.
+void MainWindow::runFtetwild()
+{
+    if (nullptr != m_quadMeshGenerator || nullptr != m_surfaceRemeshGenerator)
+        return;
+
+    if (!AutoRemesher::ExternalRemesher::isConfigured()) {
+        QMessageBox::information(this, APP_NAME,
+            tr("No fTetWild binary is set. Choose one in Preferences first."));
+        return;
+    }
+    if (m_originalVertices.empty())
+        return;
+
+    AutoRemesher::ExternalRemesher::Parameters parameters;
+    parameters.edgeLengthRel = Preferences::instance().ftetwildEdgeLengthRel();
+    parameters.envelopeSizeRel = Preferences::instance().ftetwildEnvelopeRel();
+    parameters.coarsen = Preferences::instance().ftetwildCoarsen();
+
+    m_inProgress = true;
+
+    // fTetWild reports no incremental progress, so show an indeterminate bar
+    // rather than a stuck 0% (which read as "frozen" during testing).
+    m_progressBar->setRange(0, 0);
+    m_progressBar->show();
+    startBusy(tr("Running fTetWild…"));
+
+    QThread* thread = new QThread;
+    m_surfaceRemeshGenerator = new SurfaceRemeshGenerator(
+        m_originalVertices, m_originalTriangles, parameters);
+    m_surfaceRemeshGenerator->moveToThread(thread);
+    connect(thread, &QThread::started, m_surfaceRemeshGenerator, &SurfaceRemeshGenerator::process);
+    connect(m_surfaceRemeshGenerator, &SurfaceRemeshGenerator::finished, this, &MainWindow::surfaceRemeshReady);
+    connect(m_surfaceRemeshGenerator, &SurfaceRemeshGenerator::finished, thread, &QThread::quit);
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
+    thread->start();
+
+    updateButtonStates();
+    updateTitle();
+}
+
+void MainWindow::surfaceRemeshReady()
+{
+    const bool ok = m_surfaceRemeshGenerator->succeeded();
+    std::vector<AutoRemesher::Vector3>* vertices = m_surfaceRemeshGenerator->takeVertices();
+    std::vector<std::vector<size_t>>* triangles = m_surfaceRemeshGenerator->takeTriangles();
+
+    delete m_surfaceRemeshGenerator;
+    m_surfaceRemeshGenerator = nullptr;
+
+    m_inProgress = false;
+    stopBusy();
+
+    // Restore the determinate progress bar the quad remesh uses.
+    m_progressBar->setRange(0, 100);
+    m_progressBar->reset();
+    m_progressBar->hide();
+
+    if (ok && nullptr != vertices && nullptr != triangles
+        && !vertices->empty() && !triangles->empty()) {
+        // Adopt the fTetWild surface as the new working mesh and clear anything
+        // derived from the previous surface.
+        resetDerivedState();
+        m_ftetwildApplied = true;
+        m_workingVertices = std::move(*vertices);
+        m_workingTriangles = std::move(*triangles);
+        m_saved = false;
+        showWorkingMesh();
+    } else {
+        QMessageBox::warning(this, APP_NAME,
+            tr("fTetWild did not produce a surface. See Help ▸ Debug for the log; "
+               "the original mesh is unchanged."));
+    }
+
+    delete vertices;
+    delete triangles;
 
     updateButtonStates();
     updateTitle();
@@ -1491,6 +1796,7 @@ void MainWindow::quadMeshReady()
 
     m_saved = false;
     m_inProgress = false;
+    stopBusy();
 
     // Capture intermediate isotropic mesh data for preview overlays
     m_isotropicVertices = m_quadMeshGenerator->isotropicVertices();

@@ -54,6 +54,69 @@ void Preferences::setFtetwildPath(const QString& path)
     m_settings.setValue("ftetwildPath", path);
 }
 
+double Preferences::ftetwildEdgeLengthRel() const
+{
+    // fTetWild's own default for -l/--lr is 0.05 (1/20 of the bbox diagonal).
+    return m_settings.value("ftetwildEdgeLengthRel", 0.05).toDouble();
+}
+
+void Preferences::setFtetwildEdgeLengthRel(double value)
+{
+    m_settings.setValue("ftetwildEdgeLengthRel", value);
+}
+
+double Preferences::ftetwildEnvelopeRel() const
+{
+    // fTetWild's own default for -e/--epsr is 1e-3.
+    return m_settings.value("ftetwildEnvelopeRel", 1e-3).toDouble();
+}
+
+void Preferences::setFtetwildEnvelopeRel(double value)
+{
+    m_settings.setValue("ftetwildEnvelopeRel", value);
+}
+
+bool Preferences::ftetwildCoarsen() const
+{
+    return m_settings.value("ftetwildCoarsen", false).toBool();
+}
+
+void Preferences::setFtetwildCoarsen(bool value)
+{
+    m_settings.setValue("ftetwildCoarsen", value);
+}
+
+QColor Preferences::busySpinnerColor() const
+{
+    // A bright amber default reads well over both light and dark meshes.
+    return m_settings.value("busySpinnerColor", QColor(0xff, 0xc1, 0x07)).value<QColor>();
+}
+
+void Preferences::setBusySpinnerColor(const QColor& color)
+{
+    m_settings.setValue("busySpinnerColor", color);
+}
+
+double Preferences::busySpinnerScale() const
+{
+    return m_settings.value("busySpinnerScale", 1.0).toDouble();
+}
+
+void Preferences::setBusySpinnerScale(double value)
+{
+    m_settings.setValue("busySpinnerScale", value);
+}
+
+int Preferences::busySpinnerContrast() const
+{
+    return m_settings.value("busySpinnerContrast", 85).toInt();
+}
+
+void Preferences::setBusySpinnerContrast(int value)
+{
+    m_settings.setValue("busySpinnerContrast", value);
+}
+
 void Preferences::reset()
 {
     m_settings.clear();

@@ -460,7 +460,9 @@ bool AutoRemesher::remesh()
                 updateProgress(i, 0.0f);
                 std::vector<Vector3> remeshedVertices;
                 std::vector<std::vector<size_t>> remeshedTriangles;
-                if (ExternalRemesher::remesh(ctx.vertices, ctx.triangles, ctx.voxelSize,
+                ExternalRemesher::Parameters ftetwildParams;
+                ftetwildParams.edgeLengthAbs = ctx.voxelSize;
+                if (ExternalRemesher::remesh(ctx.vertices, ctx.triangles, ftetwildParams,
                         remeshedVertices, remeshedTriangles)) {
                     ctx.vertices = std::move(remeshedVertices);
                     ctx.triangles = std::move(remeshedTriangles);

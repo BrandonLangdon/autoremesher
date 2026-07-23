@@ -33,10 +33,10 @@ macx {
 }
 
 isEmpty(HUMAN_VERSION) {
-	HUMAN_VERSION = "1.0.0"
+	HUMAN_VERSION = "1.1.0"
 }
 isEmpty(VERSION) {
-	VERSION = 1.0.0.9
+	VERSION = 1.1.0.0
 }
 
 HOMEPAGE_URL = "https://autoremesher.dust3d.org/"
@@ -190,6 +190,12 @@ HEADERS += src/quadmeshgenerator.h
 
 SOURCES += src/preferences.cpp
 HEADERS += src/preferences.h
+
+SOURCES += src/preferenceswidget.cpp
+HEADERS += src/preferenceswidget.h
+
+SOURCES += src/surfaceremeshgenerator.cpp
+HEADERS += src/surfaceremeshgenerator.h
 
 SOURCES += src/floatnumberwidget.cpp
 HEADERS += src/floatnumberwidget.h

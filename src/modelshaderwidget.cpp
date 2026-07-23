@@ -333,11 +333,15 @@ bool ModelShaderWidget::inputMousePressEventFromOtherWidget(QMouseEvent* event)
 {
     bool shouldStartMove = false;
     if (event->button() == Qt::LeftButton) {
-        if (QGuiApplication::queryKeyboardModifiers().testFlag(Qt::AltModifier) && !QGuiApplication::queryKeyboardModifiers().testFlag(Qt::ControlModifier)) {
+        if (m_mousePickingEnabled
+            && !QGuiApplication::queryKeyboardModifiers().testFlag(Qt::AltModifier)) {
+            // Picking mode: a plain left-click picks; Alt+left-drag orbits instead.
+            emit mousePressed(mouseEventGlobalPos(event));
+        } else {
+            // Default (no picking): left-drag orbits the view; hold Shift while
+            // dragging to pan. This works with a trackpad, which has no middle button.
             shouldStartMove = m_moveEnabled;
         }
-        if (!shouldStartMove /* && !m_mousePickTargetPositionInModelSpace.isNull()*/)
-            emit mousePressed(mouseEventGlobalPos(event));
     } else if (event->button() == Qt::MiddleButton) {
         shouldStartMove = m_moveEnabled;
     }
@@ -388,30 +392,32 @@ bool ModelShaderWidget::inputMouseMoveEventFromOtherWidget(QMouseEvent* event)
     int dx = pos.x() - m_lastPos.x();
     int dy = pos.y() - m_lastPos.y();
 
-    if ((event->buttons() & Qt::MiddleButton) || (m_moveStarted && (event->buttons() & Qt::LeftButton))) {
-        if (QGuiApplication::queryKeyboardModifiers().testFlag(Qt::ShiftModifier)) {
-            if (m_moveStarted) {
-                if (m_moveAndZoomByWindow) {
-                    QPoint posInParent = mapToParent(pos);
-                    QRect rect = m_moveStartGeometry;
-                    rect.translate(posInParent.x() - m_moveStartPos.x(), posInParent.y() - m_moveStartPos.y());
-                    setGeometry(rect);
-                } else {
-                    m_moveToPosition.setX(m_moveToPosition.x() + (float)2 * dx / width());
-                    m_moveToPosition.setY(m_moveToPosition.y() + (float)2 * -dy / height());
-                    if (m_moveToPosition.x() < -1.5)
-                        m_moveToPosition.setX(-1.5);
-                    if (m_moveToPosition.x() > 1.5)
-                        m_moveToPosition.setX(1.5);
-                    if (m_moveToPosition.y() < -1.5)
-                        m_moveToPosition.setY(-1.5);
-                    if (m_moveToPosition.y() > 1.5)
-                        m_moveToPosition.setY(1.5);
-                    updateProjectionMatrix();
-                    emit moveToPositionChanged(m_moveToPosition);
-                    emit renderParametersChanged();
-                    update();
-                }
+    if (m_moveStarted && ((event->buttons() & Qt::LeftButton) || (event->buttons() & Qt::MiddleButton))) {
+        // Pan with Shift held (or the middle button); orbit otherwise. On a Mac
+        // trackpad this means left-drag orbits and Shift+left-drag pans.
+        const bool panning = (event->buttons() & Qt::MiddleButton)
+            || QGuiApplication::queryKeyboardModifiers().testFlag(Qt::ShiftModifier);
+        if (panning) {
+            if (m_moveAndZoomByWindow) {
+                QPoint posInParent = mapToParent(pos);
+                QRect rect = m_moveStartGeometry;
+                rect.translate(posInParent.x() - m_moveStartPos.x(), posInParent.y() - m_moveStartPos.y());
+                setGeometry(rect);
+            } else {
+                m_moveToPosition.setX(m_moveToPosition.x() + (float)2 * dx / width());
+                m_moveToPosition.setY(m_moveToPosition.y() + (float)2 * -dy / height());
+                if (m_moveToPosition.x() < -1.5)
+                    m_moveToPosition.setX(-1.5);
+                if (m_moveToPosition.x() > 1.5)
+                    m_moveToPosition.setX(1.5);
+                if (m_moveToPosition.y() < -1.5)
+                    m_moveToPosition.setY(-1.5);
+                if (m_moveToPosition.y() > 1.5)
+                    m_moveToPosition.setY(1.5);
+                updateProjectionMatrix();
+                emit moveToPositionChanged(m_moveToPosition);
+                emit renderParametersChanged();
+                update();
             }
         } else {
             setXRotation(m_xRotation + 8 * dy);
@@ -446,10 +452,16 @@ bool ModelShaderWidget::inputWheelEventFromOtherWidget(QWheelEvent* event)
     if (!m_zoomEnabled)
         return false;
 
-    qreal delta = geometry().height() * 0.1f;
-    if (event->angleDelta().y() < 0)
-        delta = -delta;
-    zoom(delta);
+    // Trackpads deliver high-resolution pixel deltas; mouse wheels deliver angle
+    // deltas in eighths of a degree (120 per notch). Prefer whichever is present so
+    // zoom tracks the actual scroll amount instead of a fixed per-event step.
+    qreal amount = event->pixelDelta().y();
+    if (0 == amount)
+        amount = event->angleDelta().y() / 3.0;
+    if (0 == amount)
+        return true;
+
+    zoom(amount);
 
     return true;
 }
@@ -475,11 +487,21 @@ void ModelShaderWidget::zoom(float delta)
         update();
         return;
     } else {
-        m_eyePosition += QVector3D(0, 0, m_eyePosition.z() * (delta > 0 ? -0.1 : 0.1));
-        if (m_eyePosition.z() < -15)
-            m_eyePosition.setZ(-15);
-        else if (m_eyePosition.z() > -0.1)
-            m_eyePosition.setZ(-0.1f);
+        // Proportional dolly: scale the eye distance by the scroll amount so the
+        // step feels consistent near and far, and stays smooth under a trackpad's
+        // momentum scrolling. Clamp per-event so a fast flick can't jump through
+        // the model. Positive amount zooms in (moves the eye toward the origin).
+        float step = delta * 0.0025f;
+        if (step > 0.4f)
+            step = 0.4f;
+        else if (step < -0.4f)
+            step = -0.4f;
+        float newZ = m_eyePosition.z() * (1.0f - step);
+        if (newZ < -15)
+            newZ = -15;
+        else if (newZ > -0.1f)
+            newZ = -0.1f;
+        m_eyePosition.setZ(newZ);
         emit eyePositionChanged(m_eyePosition);
         emit renderParametersChanged();
         update();
