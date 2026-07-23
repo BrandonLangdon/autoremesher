@@ -83,6 +83,15 @@ public:
         m_sharpEdgeDegrees = degrees;
     }
 
+    // When enabled (and an fTetWild binary is configured via AUTOREMESHER_FTETWILD),
+    // the isotropic remesh stage is replaced by fTetWild, which is far more robust
+    // and scalable on large/dense inputs. Falls back to the built-in remesher if
+    // unavailable or if fTetWild fails on an island.
+    void setUseExternalRemesher(bool value)
+    {
+        m_useExternalRemesher = value;
+    }
+
     void setSmoothNormalDegrees(double degrees)
     {
         m_smoothNormalDegrees = degrees;
@@ -154,6 +163,7 @@ private:
     std::vector<float> m_threadProgressWeights;
     double m_scaling = 0.0;
     size_t m_targetTriangleCount = 0;
+    bool m_useExternalRemesher = false;
     double m_voxelSize = 0.0;
     double m_adaptivity = 1.0;
     double m_sharpEdgeDegrees = m_defaultSharpEdgeDegrees;

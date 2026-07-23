@@ -1304,7 +1304,7 @@ static ModelShaderMesh* buildUvRenderMesh(
 void MainWindow::setHeadlessParams(const QString& inputPath, const QString& outputPath,
     int targetQuads, double edgeScaling,
     double sharpEdgeDegrees, double smoothNormalDegrees,
-    double adaptivity)
+    double adaptivity, bool useExternalRemesher)
 {
     m_headlessMode = true;
     m_headlessOutputPath = outputPath;
@@ -1314,6 +1314,7 @@ void MainWindow::setHeadlessParams(const QString& inputPath, const QString& outp
     m_sharpEdgeDegrees = static_cast<float>(sharpEdgeDegrees);
     m_smoothNormalDegrees = static_cast<float>(smoothNormalDegrees);
     m_adaptivity = static_cast<float>(adaptivity);
+    m_useExternalRemesher = useExternalRemesher;
 }
 
 void MainWindow::saveMeshToFile(const QString& filename)
@@ -1377,6 +1378,7 @@ void MainWindow::runHeadless()
     parameters.adaptivity = m_adaptivity;
     parameters.sharpEdgeDegrees = m_sharpEdgeDegrees;
     parameters.smoothNormalDegrees = m_smoothNormalDegrees;
+    parameters.useExternalRemesher = m_useExternalRemesher;
 
     m_quadMeshGenerator = new QuadMeshGenerator(m_originalVertices, m_originalTriangles);
     connect(m_quadMeshGenerator, &QuadMeshGenerator::reportProgress, this, &MainWindow::updateProgress);
@@ -1418,6 +1420,7 @@ void MainWindow::generateQuadMesh()
     parameters.adaptivity = m_adaptivity;
     parameters.sharpEdgeDegrees = m_sharpEdgeDegrees;
     parameters.smoothNormalDegrees = m_smoothNormalDegrees;
+    parameters.useExternalRemesher = m_useExternalRemesher;
 
     m_quadMeshGenerator = new QuadMeshGenerator(m_originalVertices, m_originalTriangles);
     connect(m_quadMeshGenerator, &QuadMeshGenerator::reportProgress, this, &MainWindow::updateProgress);

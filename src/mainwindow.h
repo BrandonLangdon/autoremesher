@@ -67,7 +67,7 @@ public:
     void setHeadlessParams(const QString& inputPath, const QString& outputPath,
         int targetQuads, double edgeScaling,
         double sharpEdgeDegrees, double smoothNormalDegrees,
-        double adaptivity);
+        double adaptivity, bool useExternalRemesher = false);
     void runHeadless();
     void saveMeshToFile(const QString& filename);
 
@@ -119,6 +119,7 @@ private:
     float m_sharpEdgeDegrees = 90.0;
     float m_smoothNormalDegrees = 0.0;
     float m_adaptivity = 1.0;
+    bool m_useExternalRemesher = false;
     AutoRemesher::ModelType m_modelType = AutoRemesher::ModelType::Organic;
     std::vector<AutoRemesher::Vector3> m_originalVertices;
     std::vector<std::vector<size_t>> m_originalTriangles;
