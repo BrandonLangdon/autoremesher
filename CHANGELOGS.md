@@ -1,3 +1,13 @@
+Unreleased
+- Import STL (binary/ASCII) and 3MF in addition to OBJ (GUI + CLI), with vertex welding
+- Read all model parts from 3MF (production files split geometry into 3D/Objects/*.model)
+- Fix a data race that crashed the remesher on any multi-island mesh
+- Fix headless CLI hanging instead of exiting on a failed/unsupported load
+- Add an optional fTetWild remesh stage (subprocess) for large/messy inputs the
+  built-in isotropic remesher cannot handle in reasonable time; opt-in via
+  --use-ftetwild / GUI toggle + AUTOREMESHER_FTETWILD, with fallback to built-in
+- See docs/engineering-notes.md for decisions, root-cause investigations, and limitations
+
 1.0.0
 - Relicense from GPLv3 to MIT (reimplemented MIT-incompatible dependencies)
 - Improve parameterizer, isotropic remesher, and quad extraction algorithms
