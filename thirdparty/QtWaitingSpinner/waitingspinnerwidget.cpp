@@ -58,6 +58,7 @@ WaitingSpinnerWidget::WaitingSpinnerWidget(Qt::WindowModality modality,
 
 void WaitingSpinnerWidget::initialize() {
     _color = Qt::black;
+    _backgroundColor = Qt::transparent;
     _textColor = Qt::black;
     _roundness = 100.0;
     _minimumTrailOpacity = 3.14159265358979323846;
@@ -67,6 +68,7 @@ void WaitingSpinnerWidget::initialize() {
     _lineLength = 10;
     _lineWidth = 2;
     _innerRadius = 10;
+    _padding = 16;
     _currentCounter = 0;
     _isSpinning = false;
 
@@ -83,6 +85,13 @@ void WaitingSpinnerWidget::paintEvent(QPaintEvent *) {
     painter.fillRect(this->rect(), Qt::transparent);
     painter.setRenderHint(QPainter::Antialiasing, true);
 
+    // Draw the optional scrim first, behind the spinner and caption.
+    if (_backgroundColor.alpha() > 0) {
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(_backgroundColor);
+        painter.drawRoundedRect(this->rect(), 12, 12);
+    }
+
     if (_currentCounter >= _numberOfLines) {
         _currentCounter = 0;
     }
@@ -91,7 +100,7 @@ void WaitingSpinnerWidget::paintEvent(QPaintEvent *) {
     for (int i = 0; i < _numberOfLines; ++i) {
         painter.save();
         painter.translate(_innerRadius + _lineLength,
-                          _innerRadius + _lineLength);
+                          _innerRadius + _lineLength + _padding);
         painter.translate((width() - _imageSize.width()) / 2, 0);
         qreal rotateAngle =
                 static_cast<qreal>(360 * i) / static_cast<qreal>(_numberOfLines);
@@ -112,7 +121,8 @@ void WaitingSpinnerWidget::paintEvent(QPaintEvent *) {
 
     if (!_text.isEmpty()) {
         painter.setPen(QPen(_textColor));
-        painter.drawText(QRect(0, _imageSize.height(), width(), height() - _imageSize.height()), 
+        painter.drawText(QRect(_padding, _imageSize.height() + _padding,
+                              width() - _padding * 2, height() - _imageSize.height() - _padding * 2),
                 Qt::AlignBottom | Qt::AlignHCenter, _text);
     }
 }
@@ -170,6 +180,11 @@ void WaitingSpinnerWidget::setInnerRadius(int radius) {
 void WaitingSpinnerWidget::setText(QString text) {
     _text = text;
     updateSize();
+}
+
+void WaitingSpinnerWidget::setBackgroundColor(QColor color) {
+    _backgroundColor = color;
+    update();
 }
 
 QColor WaitingSpinnerWidget::color() {
@@ -256,12 +271,14 @@ void WaitingSpinnerWidget::rotate() {
 void WaitingSpinnerWidget::updateSize() {
     int size = (_innerRadius + _lineLength) * 2;
     _imageSize = QSize(size, size);
+    int pad = _padding * 2;
     if (_text.isEmpty()) {
-        setFixedSize(size, size);
+        setFixedSize(size + pad, size + pad);
     } else {
         QFontMetrics fm(font());
         QSize textSize = QSize(fm.horizontalAdvance(_text), fm.height());
-        setFixedSize(std::max(size, textSize.width()), size + size / 4 + textSize.height());
+        setFixedSize(std::max(size, textSize.width()) + pad,
+                     size + size / 4 + textSize.height() + pad);
     }
 }
 

@@ -52,6 +52,9 @@ public slots:
 public:
     void setColor(QColor color);
     void setTextColor(QColor color);
+    // Optional scrim painted behind the spinner and caption so they keep
+    // consistent contrast over an arbitrary (e.g. 3D viewport) background.
+    void setBackgroundColor(QColor color);
     void setRoundness(qreal roundness);
     void setMinimumTrailOpacity(qreal minimumTrailOpacity);
     void setTrailFadePercentage(qreal trail);
@@ -96,6 +99,7 @@ private:
 
 private:
     QColor  _color;
+    QColor  _backgroundColor;
     qreal   _roundness; // 0..100
     qreal   _minimumTrailOpacity;
     qreal   _trailFadePercentage;
@@ -104,6 +108,7 @@ private:
     int     _lineLength;
     int     _lineWidth;
     int     _innerRadius;
+    int     _padding;
     QString _text;
     QSize   _imageSize;
     QColor  _textColor;
