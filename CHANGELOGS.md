@@ -1,4 +1,4 @@
-Unreleased
+1.1.0
 - Import STL (binary/ASCII) and 3MF in addition to OBJ (GUI + CLI), with vertex welding
 - Read all model parts from 3MF (production files split geometry into 3D/Objects/*.model)
 - Fix a data race that crashed the remesher on any multi-island mesh
