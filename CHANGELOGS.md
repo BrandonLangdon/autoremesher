@@ -6,6 +6,17 @@ Unreleased
 - Add an optional fTetWild remesh stage (subprocess) for large/messy inputs the
   built-in isotropic remesher cannot handle in reasonable time; opt-in via
   --use-ftetwild / GUI toggle + AUTOREMESHER_FTETWILD, with fallback to built-in
+- Rework the GUI into explicit steps: Open now only loads the mesh and shows
+  source stats (vertex/triangle counts, bounding-box size) instead of
+  auto-remeshing; remeshing is driven by separate "Run fTetWild" and
+  "Remesh to Quads" buttons
+- Run fTetWild as a standalone GUI step whose clean surface replaces the working
+  mesh fed to the quad remesher (the original is kept, so the step is idempotent)
+- Move the fTetWild binary path into a File > Preferences dialog (macOS Cmd+,)
+  and expose fTetWild parameters there (envelope size, edge length, coarsen)
+- Replace the near-invisible progress bar with a captioned busy spinner shown
+  over the viewport that reports the live pipeline stage; its color, size, and
+  backdrop contrast are configurable in Preferences
 - See docs/engineering-notes.md for decisions, root-cause investigations, and limitations
 
 1.0.0

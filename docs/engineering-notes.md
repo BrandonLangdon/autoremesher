@@ -147,16 +147,35 @@ is why the stage is opt-in.
 
 ## 5. Follow-ups (requested UX redesign)
 
-Captured from user testing; not yet implemented:
+Captured from user testing. Items 1, 3, and 4 landed on branch
+`gui-workflow-redesign`; item 2 is still open.
 
-1. Expose selected fTetWild parameters in the GUI (envelope ε `-e`, edge length,
-   `--coarsen`, `--manifold-surface`) instead of hard-coding
-   `--manifold-surface -a <voxelSize>`.
+1. **Done.** Expose fTetWild parameters in the GUI (envelope ε `-e`, ideal edge
+   length `-l`, `--coarsen`) via the Preferences dialog, threaded through a new
+   `ExternalRemesher::Parameters`. `--manifold-surface` stays forced on because
+   the pipeline consumes the extracted `__sf.obj` surface.
 2. Better guidance on how the sliders affect results — help pop-ups beyond
    tooltips (Sharp Edge / Smooth Normal / Adaptivity / Target Quads / Edge
-   Scaling).
-3. Move the fTetWild binary path out of the controls panel into a
-   Preferences/system-menu setting.
-4. Explicit multi-step workflow: **Open** should only load + show stats (no
-   auto-remesh); **fTetWild** becomes a button that runs and replaces the
-   preview; **quad remesh** is a separate button/step.
+   Scaling). **Still open.**
+3. **Done.** The fTetWild binary path moved out of the controls panel into a
+   File > Preferences dialog (macOS Cmd+, via `PreferencesRole`).
+4. **Done.** Explicit multi-step workflow: **Open** only loads + shows source
+   stats; **Run fTetWild** is a standalone step whose clean surface becomes the
+   working mesh; **Remesh to Quads** is a separate step. The GUI quad remesh no
+   longer runs fTetWild in-core (that path is retained only for headless
+   `--use-ftetwild`).
+
+### 5.1 Busy indicator (from the same redesign)
+
+The old 2px progress bar was effectively invisible and greyed-out buttons read
+as "hung." Replaced with a captioned spinner (`WaitingSpinnerWidget`) over the
+viewport that mirrors the live pipeline stage (the pipeline already emitted these
+strings via `reportProgressDetailed`; they were being discarded). Color, size,
+and backdrop contrast are configurable in Preferences.
+
+**Gotcha (macOS):** the viewport is a `QOpenGLWidget`. A translucent overlay
+that is a *sibling* of a GL surface composites its semi-transparent pixels
+against black, not the GL content — the scrim vanished and the ring rendered
+muddy grey. Fix: the spinner is a **top-level** frameless translucent window,
+positioned over the viewport and tracked on move/resize. Top-level windows are
+composited by the OS and render correctly over OpenGL.

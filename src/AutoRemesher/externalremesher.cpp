@@ -148,7 +148,7 @@ bool isConfigured()
 
 bool remesh(const std::vector<Vector3>& inVertices,
     const std::vector<std::vector<size_t>>& inTriangles,
-    double targetEdgeLength,
+    const Parameters& parameters,
     std::vector<Vector3>& outVertices,
     std::vector<std::vector<size_t>>& outTriangles)
 {
@@ -172,8 +172,16 @@ bool remesh(const std::vector<Vector3>& inVertices,
             << " -i " << shellQuote(inPath.string())
             << " -o " << shellQuote(outPath.string())
             << " --manifold-surface --is-quiet --level 4";
-        if (targetEdgeLength > 0.0)
-            cmd << " -a " << targetEdgeLength;
+        // -a (absolute) and -l (relative) are mutually exclusive in fTetWild;
+        // prefer absolute when the caller (the in-core per-island path) supplies it.
+        if (parameters.edgeLengthAbs > 0.0)
+            cmd << " -a " << parameters.edgeLengthAbs;
+        else if (parameters.edgeLengthRel > 0.0)
+            cmd << " -l " << parameters.edgeLengthRel;
+        if (parameters.envelopeSizeRel > 0.0)
+            cmd << " -e " << parameters.envelopeSizeRel;
+        if (parameters.coarsen)
+            cmd << " --coarsen";
         cmd << " > " << shellQuote(logPath.string()) << " 2>&1";
 
         const int rc = std::system(cmd.str().c_str());

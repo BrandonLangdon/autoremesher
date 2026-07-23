@@ -191,6 +191,12 @@ HEADERS += src/quadmeshgenerator.h
 SOURCES += src/preferences.cpp
 HEADERS += src/preferences.h
 
+SOURCES += src/preferenceswidget.cpp
+HEADERS += src/preferenceswidget.h
+
+SOURCES += src/surfaceremeshgenerator.cpp
+HEADERS += src/surfaceremeshgenerator.h
+
 SOURCES += src/floatnumberwidget.cpp
 HEADERS += src/floatnumberwidget.h
 
