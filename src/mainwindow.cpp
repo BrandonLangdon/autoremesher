@@ -31,6 +31,8 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QImage>
+#include <QCheckBox>
+#include <QFileInfo>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -281,6 +283,42 @@ MainWindow::MainWindow()
         m_targetScaling = value;
     });
 
+    // Optional fTetWild remesh stage. The stored binary path is exported so the
+    // AutoRemesher core (which locates fTetWild via AUTOREMESHER_FTETWILD) finds it.
+    const QString storedFtetwildPath = Preferences::instance().ftetwildPath();
+    if (!storedFtetwildPath.isEmpty())
+        qputenv("AUTOREMESHER_FTETWILD", storedFtetwildPath.toUtf8());
+
+    m_useFtetwildCheckBox = new QCheckBox(tr("Use fTetWild remesher"));
+    m_useFtetwildCheckBox->setChecked(m_useExternalRemesher);
+    m_useFtetwildCheckBox->setToolTip(tr("Replace the built-in remesher with fTetWild. Far more robust and scalable on large or messy meshes (STL/3MF prints), at higher fixed cost on small models. Requires the fTetWild binary to be set below."));
+    connect(m_useFtetwildCheckBox, &QCheckBox::toggled, [=](bool checked) {
+        m_useExternalRemesher = checked;
+    });
+
+    m_ftetwildPathButton = new QPushButton;
+    m_ftetwildPathButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto updateFtetwildPathButton = [this]() {
+        const QString path = Preferences::instance().ftetwildPath();
+        if (path.isEmpty()) {
+            m_ftetwildPathButton->setText(tr("Set fTetWild binary…"));
+            m_ftetwildPathButton->setToolTip(tr("No fTetWild binary set; the checkbox falls back to the built-in remesher."));
+        } else {
+            m_ftetwildPathButton->setText(tr("fTetWild: %1").arg(QFileInfo(path).fileName()));
+            m_ftetwildPathButton->setToolTip(path);
+        }
+    };
+    updateFtetwildPathButton();
+    connect(m_ftetwildPathButton, &QPushButton::clicked, this, [this, updateFtetwildPathButton]() {
+        QString filename = QFileDialog::getOpenFileName(this, tr("Select fTetWild binary (FloatTetwild_bin)"),
+            Preferences::instance().ftetwildPath());
+        if (filename.isEmpty())
+            return;
+        Preferences::instance().setFtetwildPath(filename);
+        qputenv("AUTOREMESHER_FTETWILD", filename.toUtf8());
+        updateFtetwildPathButton();
+    });
+
     //m_modelTypeSelectBox = new QComboBox;
     //m_modelTypeSelectBox->addItem(tr("Organic"));
     //m_modelTypeSelectBox->addItem(tr("Hard surface"));
@@ -317,6 +355,8 @@ MainWindow::MainWindow()
     controlsLayout->addWidget(m_adaptivityWidget);
     controlsLayout->addWidget(m_targetQuadCountWidget);
     controlsLayout->addWidget(m_targetScalingWidget);
+    controlsLayout->addWidget(m_useFtetwildCheckBox);
+    controlsLayout->addWidget(m_ftetwildPathButton);
     //controlsLayout->addWidget(m_modelTypeSelectBox);
 
     // Result mesh stats (hidden until a mesh is generated)
@@ -427,6 +467,8 @@ void MainWindow::updateButtonStates()
         m_sharpEdgeDegreesWidget->setEnabled(true);
         m_smoothNormalDegreesWidget->setEnabled(true);
         m_adaptivityWidget->setEnabled(true);
+        m_useFtetwildCheckBox->setEnabled(true);
+        m_ftetwildPathButton->setEnabled(true);
         //m_modelTypeSelectBox->setEnabled(true);
         if (nullptr != m_remeshedQuads) {
             m_saveMeshButton->show();
@@ -449,6 +491,8 @@ void MainWindow::updateButtonStates()
         m_sharpEdgeDegreesWidget->setDisabled(true);
         m_smoothNormalDegreesWidget->setDisabled(true);
         m_adaptivityWidget->setDisabled(true);
+        m_useFtetwildCheckBox->setDisabled(true);
+        m_ftetwildPathButton->setDisabled(true);
         //m_modelTypeSelectBox->setDisabled(true);
     }
 

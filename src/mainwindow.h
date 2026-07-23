@@ -40,6 +40,8 @@ class QuadMeshGenerator;
 class FloatNumberWidget;
 class IntNumberWidget;
 class QLabel;
+class QCheckBox;
+class QPushButton;
 #ifdef Q_OS_WIN32
 class QWinTaskbarButton;
 #endif
@@ -144,6 +146,8 @@ private:
     FloatNumberWidget* m_sharpEdgeDegreesWidget = nullptr;
     FloatNumberWidget* m_smoothNormalDegreesWidget = nullptr;
     FloatNumberWidget* m_adaptivityWidget = nullptr;
+    QCheckBox* m_useFtetwildCheckBox = nullptr;
+    QPushButton* m_ftetwildPathButton = nullptr;
     QLabel* m_quadCountLabel = nullptr;
     QLabel* m_nonQuadCountLabel = nullptr;
     QLabel* m_vertexCountLabel = nullptr;
