@@ -54,7 +54,17 @@ class AutoRemesherPreferences(AddonPreferences):
         )
 
 
+def _mesh_object_poll(self, obj):
+    return obj.type == "MESH"
+
+
 class AutoRemesherSettings(PropertyGroup):
+    target: PointerProperty(
+        name="Object",
+        description="Mesh object to remesh. Leave empty to use the active object",
+        type=bpy.types.Object,
+        poll=_mesh_object_poll,
+    )
     target_quads: IntProperty(
         name="Target Quads",
         description="Approximate number of quads in the output — the main density control",
@@ -113,6 +123,18 @@ class VIEW3D_PT_autoremesher(Panel):
     def draw(self, context):
         layout = self.layout
         settings = context.scene.autoremesher
+
+        # Target object: an explicit picker (dropdown of scene meshes) that shows
+        # the chosen name; falls back to the active object when left empty.
+        layout.prop(settings, "target")
+        active = context.active_object
+        if settings.target is None:
+            if active is not None and active.type == "MESH":
+                layout.label(text="Active: %s" % active.name, icon="OBJECT_DATA")
+            else:
+                layout.label(text="Select a mesh object", icon="ERROR")
+
+        layout.separator()
 
         col = layout.column(align=True)
         col.prop(settings, "target_quads")

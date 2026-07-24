@@ -10,6 +10,7 @@ undrained pipe would fill the OS buffer and deadlock the child mid-run.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -19,6 +20,9 @@ import bpy
 from bpy.types import Operator
 
 from . import io_obj
+
+# Matches the CLI's headless progress lines, e.g. "90% done. Island 1: solve".
+_PROGRESS_RE = re.compile(r"(\d+)% done\.(.*)")
 
 
 def resolve_binary(path):
@@ -68,10 +72,14 @@ class MESH_OT_autoremesher(Operator):
     _log_path = None
     _obj_name = ""
     _start = 0.0
+    _log_pos = 0
+    _percent = 0
+    _stage = ""
 
     @classmethod
     def poll(cls, context):
-        obj = context.active_object
+        settings = getattr(context.scene, "autoremesher", None)
+        obj = (settings.target if settings else None) or context.active_object
         return obj is not None and obj.type == "MESH"
 
     def invoke(self, context, event):
@@ -82,8 +90,14 @@ class MESH_OT_autoremesher(Operator):
             return {"CANCELLED"}
 
         settings = context.scene.autoremesher
-        obj = context.active_object
+        obj = settings.target or context.active_object
+        if obj is None or obj.type != "MESH":
+            self.report({"ERROR"}, "Select a mesh object (or set one in the Object field)")
+            return {"CANCELLED"}
         self._obj_name = obj.name
+        self._log_pos = 0
+        self._percent = 0
+        self._stage = ""
 
         self._tmpdir = tempfile.mkdtemp(prefix="autoremesher_")
         self._in_path = os.path.join(self._tmpdir, "input.obj")
@@ -139,13 +153,36 @@ class MESH_OT_autoremesher(Operator):
         if event.type == "TIMER":
             returncode = self._proc.poll()
             if returncode is None:
-                elapsed = int(time.time() - self._start)
-                context.workspace.status_text_set(
-                    "AutoRemesher: running…  %ds  (Esc to cancel)" % elapsed
-                )
+                self._poll_progress()
+                context.workspace.status_text_set(self._status_line())
                 return {"RUNNING_MODAL"}
             return self._finish(context, cancelled=False, returncode=returncode)
         return {"PASS_THROUGH"}
+
+    def _poll_progress(self):
+        """Read new log output and update the last-seen percent and stage text."""
+        try:
+            with open(self._log_path, "r", encoding="utf-8", errors="ignore") as f:
+                f.seek(self._log_pos)
+                chunk = f.read()
+                self._log_pos = f.tell()
+        except Exception:  # noqa: BLE001
+            return
+        for match in _PROGRESS_RE.finditer(chunk):
+            self._percent = int(match.group(1))
+            stage = match.group(2).strip()
+            if stage:
+                self._stage = stage
+
+    def _status_line(self):
+        elapsed = int(time.time() - self._start)
+        if self._percent:
+            head = "AutoRemesher: %d%%" % self._percent
+            if self._stage:
+                head += " — %s" % self._stage
+        else:
+            head = "AutoRemesher: running…"
+        return "%s   %ds  (Esc to cancel)" % (head, elapsed)
 
     def _finish(self, context, cancelled, returncode=None):
         wm = context.window_manager
