@@ -21,6 +21,38 @@ from bpy.types import Operator
 from . import io_obj
 
 
+def resolve_binary(path):
+    """Resolve a user-provided path to the actual AutoRemesher executable.
+
+    Blender's file browser can select a macOS ``.app`` bundle but cannot descend
+    into it, so accept the bundle and dig out ``Contents/MacOS/<exe>``. A direct
+    path to the executable is returned unchanged. Returns "" for an empty path.
+    """
+    if not path:
+        return ""
+    path = os.path.normpath(bpy.path.abspath(path))
+
+    # Already the executable.
+    if os.path.isfile(path):
+        return path
+
+    # A macOS .app bundle (a directory, usually ending in .app).
+    macos_dir = os.path.join(path, "Contents", "MacOS")
+    if os.path.isdir(macos_dir):
+        # Prefer the executable named after the bundle (autoremesher.app -> autoremesher).
+        candidate = os.path.join(macos_dir, os.path.splitext(os.path.basename(path))[0])
+        if os.path.isfile(candidate):
+            return candidate
+        # Otherwise take the first regular file in Contents/MacOS.
+        for name in sorted(os.listdir(macos_dir)):
+            full = os.path.join(macos_dir, name)
+            if os.path.isfile(full):
+                return full
+
+    # Return as-is; the caller's isfile() check will produce a clear error.
+    return path
+
+
 class MESH_OT_autoremesher(Operator):
     bl_idname = "mesh.autoremesher_remesh"
     bl_label = "Remesh with AutoRemesher"
@@ -44,9 +76,9 @@ class MESH_OT_autoremesher(Operator):
 
     def invoke(self, context, event):
         prefs = context.preferences.addons[__package__].preferences
-        binary = bpy.path.abspath(prefs.autoremesher_path) if prefs.autoremesher_path else ""
+        binary = resolve_binary(prefs.autoremesher_path)
         if not binary or not os.path.isfile(binary):
-            self.report({"ERROR"}, "Set the AutoRemesher binary in Add-on Preferences")
+            self.report({"ERROR"}, "Set a valid AutoRemesher binary or .app in Add-on Preferences")
             return {"CANCELLED"}
 
         settings = context.scene.autoremesher

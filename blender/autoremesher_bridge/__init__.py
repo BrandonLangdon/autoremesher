@@ -34,8 +34,8 @@ class AutoRemesherPreferences(AddonPreferences):
 
     autoremesher_path: StringProperty(
         name="AutoRemesher Binary",
-        description="Path to the AutoRemesher executable (the CLI). On macOS this is "
-        "inside the app bundle: AutoRemesher.app/Contents/MacOS/autoremesher",
+        description="Path to the AutoRemesher executable, or the macOS .app bundle "
+        "(the add-on resolves .app/Contents/MacOS/autoremesher automatically)",
         subtype="FILE_PATH",
     )
     ftetwild_path: StringProperty(
@@ -49,7 +49,7 @@ class AutoRemesherPreferences(AddonPreferences):
         layout.prop(self, "autoremesher_path")
         layout.prop(self, "ftetwild_path")
         layout.label(
-            text="Tip: point AutoRemesher Binary at the CLI executable, not the .app folder.",
+            text="macOS: select AutoRemesher.app directly — the inner binary is found for you.",
             icon="INFO",
         )
 

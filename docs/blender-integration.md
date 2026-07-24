@@ -70,8 +70,12 @@ new/replaced object ◄── read output.obj ◄──────────�
    ```
 3. In Blender: **Edit ▸ Preferences ▸ Add-ons ▸ Install…**, pick the zip, and
    enable **Mesh: AutoRemesher Bridge**.
-4. Expand the add-on's preferences and set **AutoRemesher Binary** to the CLI
-   executable (and optionally **fTetWild Binary** to `FloatTetwild_bin`).
+4. Expand the add-on's preferences and set **AutoRemesher Binary** (and
+   optionally **fTetWild Binary** to `FloatTetwild_bin`).
+   - **macOS:** just select `AutoRemesher.app` — Blender's file browser can't
+     descend into a `.app`, so the add-on resolves
+     `…/Contents/MacOS/autoremesher` inside it for you. A direct path to the
+     inner executable works too.
 
 > During development you can instead symlink `blender/autoremesher_bridge` into
 > your Blender `scripts/addons/` directory and use **Reload Scripts**.
