@@ -125,12 +125,18 @@ class MESH_OT_autoremesher(Operator):
         ]
         env = os.environ.copy()
         if settings.use_ftetwild:
-            ftw = bpy.path.abspath(prefs.ftetwild_path) if prefs.ftetwild_path else ""
+            ftw = resolve_binary(prefs.ftetwild_path)
             if ftw and os.path.isfile(ftw):
                 cmd.append("--use-ftetwild")
                 env["AUTOREMESHER_FTETWILD"] = ftw
             else:
-                self.report({"WARNING"}, "fTetWild path not set/invalid; using the built-in remesher")
+                # Fail loudly rather than silently running the built-in remesher,
+                # which can hang for a very long time on the large/messy meshes
+                # fTetWild is meant for.
+                self.report({"ERROR"}, "‘Use fTetWild’ is on but no valid fTetWild binary is set "
+                                       "in Add-on Preferences (it is separate from the app's setting)")
+                self._cleanup()
+                return {"CANCELLED"}
 
         try:
             self._log_file = open(self._log_path, "wb")
@@ -180,6 +186,8 @@ class MESH_OT_autoremesher(Operator):
             head = "AutoRemesher: %d%%" % self._percent
             if self._stage:
                 head += " — %s" % self._stage
+            if "fTetWild" in self._stage:
+                head += " [runs silently, may take minutes]"
         else:
             head = "AutoRemesher: running…"
         return "%s   %ds  (Esc to cancel)" % (head, elapsed)
@@ -208,8 +216,10 @@ class MESH_OT_autoremesher(Operator):
 
         if returncode != 0 or not os.path.isfile(self._out_path):
             tail = self._log_tail()  # read before cleanup removes the log
+            saved = self._save_log()  # keep the full log for inspection
             self._cleanup()
-            self.report({"ERROR"}, "AutoRemesher failed (exit %s)%s" % (returncode, tail))
+            hint = "  Full log: %s" % saved if saved else ""
+            self.report({"ERROR"}, "AutoRemesher failed (exit %s)%s%s" % (returncode, tail, hint))
             return {"CANCELLED"}
 
         try:
@@ -284,3 +294,12 @@ class MESH_OT_autoremesher(Operator):
         if not text:
             return ""
         return ": " + text[-limit:].replace("\n", " ")
+
+    def _save_log(self):
+        """Copy the CLI log to a stable path so a failed run can be inspected."""
+        try:
+            dest = os.path.join(tempfile.gettempdir(), "autoremesher_last_run.log")
+            shutil.copyfile(self._log_path, dest)
+            return dest
+        except Exception:  # noqa: BLE001
+            return ""
