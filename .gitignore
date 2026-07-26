@@ -48,3 +48,7 @@ TestModels/
 
 # Blender add-on build artifact
 blender/*.zip
+
+# Python bytecode cache
+__pycache__/
+*.pyc
