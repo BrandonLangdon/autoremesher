@@ -3,12 +3,15 @@
  */
 #include <AutoRemesher/ExternalRemesher>
 #include <AutoRemesher/PositionKey>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <sstream>
 #include <string>
@@ -122,6 +125,26 @@ bool readObjWelded(const std::filesystem::path& path,
     return !outTriangles.empty();
 }
 
+double boundingBoxDiagonal(const std::vector<Vector3>& vertices)
+{
+    if (vertices.empty())
+        return 0.0;
+    Vector3 lo = vertices[0];
+    Vector3 hi = vertices[0];
+    for (const auto& v : vertices) {
+        lo.setX(std::min(lo.x(), v.x()));
+        lo.setY(std::min(lo.y(), v.y()));
+        lo.setZ(std::min(lo.z(), v.z()));
+        hi.setX(std::max(hi.x(), v.x()));
+        hi.setY(std::max(hi.y(), v.y()));
+        hi.setZ(std::max(hi.z(), v.z()));
+    }
+    const double dx = hi.x() - lo.x();
+    const double dy = hi.y() - lo.y();
+    const double dz = hi.z() - lo.z();
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
 std::string shellQuote(const std::string& s)
 {
     std::string out = "'";
@@ -174,10 +197,25 @@ bool remesh(const std::vector<Vector3>& inVertices,
             << " --manifold-surface --is-quiet --level 4";
         // -a (absolute) and -l (relative) are mutually exclusive in fTetWild;
         // prefer absolute when the caller (the in-core per-island path) supplies it.
-        if (parameters.edgeLengthAbs > 0.0)
-            cmd << " -a " << parameters.edgeLengthAbs;
-        else if (parameters.edgeLengthRel > 0.0)
+        if (parameters.edgeLengthAbs > 0.0) {
+            double edgeLength = parameters.edgeLengthAbs;
+            // Guard against a pathologically small edge length (e.g. a high target
+            // quad count on a small/compact mesh drives the derived voxel size tiny):
+            // fTetWild would build an enormous tetrahedralization and effectively
+            // hang. Floor at 1% of the bounding-box diagonal, which keeps the run
+            // bounded (~tens of seconds) while leaving normal requests untouched.
+            const double diagonal = boundingBoxDiagonal(inVertices);
+            const double minEdgeLength = diagonal * 0.01;
+            if (diagonal > 0.0 && edgeLength < minEdgeLength) {
+                std::cerr << "fTetWild: requested edge length " << edgeLength
+                          << " is below 1% of the model size; clamping to " << minEdgeLength
+                          << " to avoid an excessive tetrahedralization." << std::endl;
+                edgeLength = minEdgeLength;
+            }
+            cmd << " -a " << edgeLength;
+        } else if (parameters.edgeLengthRel > 0.0) {
             cmd << " -l " << parameters.edgeLengthRel;
+        }
         if (parameters.envelopeSizeRel > 0.0)
             cmd << " -e " << parameters.envelopeSizeRel;
         if (parameters.coarsen)

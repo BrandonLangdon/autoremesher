@@ -45,3 +45,10 @@ qrc_*.cpp
 moc/
 # Local sample models for testing (not versioned)
 TestModels/
+
+# Blender add-on build artifact
+blender/*.zip
+
+# Python bytecode cache
+__pycache__/
+*.pyc

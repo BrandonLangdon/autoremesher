@@ -18,6 +18,7 @@ Buy me a coffee for staying up late coding :-) [![](https://www.paypalobjects.co
   - [Parameters](#parameters)
 - [Using fTetWild (optional)](#using-ftetwild-optional)
 - [Command-line (headless)](#command-line-headless)
+- [Blender add-on](#blender-add-on)
 - [Quick Start (prebuilt releases)](#quick-start-prebuilt-releases)
 - [License](#license)
 - [Acknowledgements](#acknowledgements)
@@ -31,6 +32,7 @@ This fork ([BrandonLangdon/autoremesher](https://github.com/BrandonLangdon/autor
 - **Optional fTetWild remesh stage** — hand large or messy meshes to [fTetWild](https://github.com/wildmeshing/fTetWild) for a clean, watertight, uniform surface before quad remeshing. See [Using fTetWild](#using-ftetwild-optional).
 - **Clear progress feedback** — a captioned spinner over the viewport reports the live pipeline stage instead of a near-invisible progress bar.
 - **Trackpad-friendly viewport controls** — plain left-drag orbits, Shift+left-drag pans, and zoom tracks the actual scroll amount.
+- **Blender add-on** — quad-remesh the selected object from inside Blender via a subprocess bridge. See [Blender add-on](#blender-add-on).
 - **Robustness fixes** — fixes a data race that crashed the remesher on any multi-island mesh, and a headless hang on failed loads.
 
 See [`CHANGELOGS.md`](CHANGELOGS.md) for the full list and [`docs/engineering-notes.md`](docs/engineering-notes.md) for the design decisions and root-cause investigations behind them.
@@ -157,6 +159,8 @@ These control the quad remesh (the **Remesh to Quads** step). The same values ar
 
 The built-in isotropic remesher can be slow or unstable on very large, non-manifold, or "dirty" meshes (typical of 3D-print STL/3MF files). For those, AutoRemesher can hand the surface to **[fTetWild](https://github.com/wildmeshing/fTetWild)**, which produces a clean, watertight, uniform-resolution manifold surface that quad remeshing consumes directly. It is **opt-in** — small, clean meshes are faster through the built-in path.
 
+> **When to use it — and when not to.** Reach for fTetWild on **messy, large, or non-manifold** meshes: 3D-print STL/3MF, self-intersections, holes, non-manifold edges — cases where the built-in remesher struggles or stalls. **Do not use it on simple, clean meshes** (e.g. an icosphere). fTetWild tetrahedralizes the volume, which carries a fixed overhead that makes it far slower than the built-in path for no benefit; a high **Target Quads** count on a small, compact mesh makes it slower still. For clean geometry, leave fTetWild off and use the built-in remesher.
+
 ### 1. Build fTetWild
 
 fTetWild is a separate project; build it once and keep the binary. It needs **GMP** and, on current systems, an **older CMake**:
@@ -199,6 +203,45 @@ AutoRemesher has a CLI mode for headless processing. It accepts the same `.obj`,
 ```
 
 Add `--use-ftetwild` to run the fTetWild stage (requires `AUTOREMESHER_FTETWILD`). On Linux/Windows the executable is `./autoremesher` / `autoremesher.exe`. Try it with one of the [common-3d-test-models](https://github.com/alecjacobson/common-3d-test-models).
+
+## Blender add-on
+
+A Blender add-on ([`blender/autoremesher_bridge/`](blender/autoremesher_bridge)) quad-remeshes the selected object by driving the AutoRemesher CLI as a subprocess, then brings the result back into Blender — replacing the object's mesh in place or adding a new object. Because it shells out to the executable, the AutoRemesher core stays standalone; see [`docs/blender-integration.md`](docs/blender-integration.md) for the design.
+
+### Requirements
+
+- A built AutoRemesher executable (see [Building](#building)).
+- Blender 3.0 or newer.
+- Optional: a built `FloatTetwild_bin` (see [Using fTetWild](#using-ftetwild-optional)) for the fTetWild option.
+
+### Install
+
+1. Build the add-on zip — the package folder must be the top entry in the archive:
+   ```bash
+   cd blender
+   zip -r autoremesher_bridge.zip autoremesher_bridge -x '*/__pycache__/*'
+   ```
+2. In Blender: **Edit ▸ Preferences ▸ Add-ons ▸ Install from Disk…**, choose `autoremesher_bridge.zip`, and tick **Mesh: AutoRemesher Bridge** to enable it.
+3. Expand the add-on's preferences and set the binary paths:
+   - **AutoRemesher Binary** — the CLI executable. On **macOS**, select `AutoRemesher.app` directly: Blender's file browser can't descend into a `.app` bundle, so the add-on resolves `…/Contents/MacOS/autoremesher` inside it for you. On Linux/Windows, pick the `autoremesher` / `autoremesher.exe` file. If the picker won't let you select the `.app`, paste the path into the field instead.
+   - **fTetWild Binary** *(optional)* — the `FloatTetwild_bin` path. This is **separate** from the AutoRemesher app's own fTetWild setting.
+
+> For development you can instead symlink `blender/autoremesher_bridge` into your Blender `scripts/addons/` folder and use **Reload Scripts** after edits.
+
+### Use
+
+1. Select a mesh object.
+2. Open the **N** sidebar in the 3D viewport and switch to the **AutoRemesher** tab.
+3. Pick the **Object** (defaults to the active object), set the [parameters](#parameters), and choose an output mode:
+   - **Replace In Place** — swaps the object's mesh, keeping its transform and name.
+   - **New Object** — adds `<name>_remesh` beside the original with the same transform.
+4. Click **Remesh with AutoRemesher**. The status bar shows the live pipeline stage and elapsed time; press **Esc** to cancel (which stops the subprocess).
+
+**Apply Modifiers** remeshes the evaluated mesh (modifier stack baked); when replacing in place, the now-baked modifiers are cleared afterward. Only geometry is transferred — UVs, materials, and vertex groups are not carried over (retopology changes the topology).
+
+### fTetWild in Blender
+
+Enable **Use fTetWild** only for messy/large meshes, and set the **fTetWild Binary** in the add-on preferences first — if it's enabled but unset, the run stops with a clear error rather than silently falling back to the built-in remesher. As in the app, **don't use fTetWild on simple, clean meshes** (see [the note above](#using-ftetwild-optional)); it is much slower there for no benefit. If a run looks stuck, the fTetWild stage genuinely runs silently for a while (the status bar says so); on failure, the last run's log is saved to `autoremesher_last_run.log` in your system temp folder for inspection.
 
 ## Quick Start (prebuilt releases)
 

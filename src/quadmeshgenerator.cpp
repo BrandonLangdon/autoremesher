@@ -46,7 +46,13 @@ void QuadMeshGenerator::emitProgress(float progress)
 
 void QuadMeshGenerator::emitProgress(float progress, const QString& status)
 {
-    fprintf(stdout, "%d%% done.\n", (int)(progress * 100));
+    // Include the stage text after the percentage so headless callers (e.g. the
+    // Blender bridge) can show what the pipeline is doing, not just how far along
+    // it is. The "N% done." prefix is kept for backward compatibility.
+    if (status.isEmpty())
+        fprintf(stdout, "%d%% done.\n", (int)(progress * 100));
+    else
+        fprintf(stdout, "%d%% done. %s\n", (int)(progress * 100), status.toUtf8().constData());
     fflush(stdout);
     emit reportProgressDetailed(progress, status);
     emit reportProgress(progress);

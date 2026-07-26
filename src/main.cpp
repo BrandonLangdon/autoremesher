@@ -210,7 +210,13 @@ int main(int argc, char** argv)
                     }
                 }
 
-                QCoreApplication::quit();
+                // Exit non-zero when no geometry was produced (distinct from the
+                // load-failure code 1) so callers such as the Blender bridge can
+                // detect failure by exit code rather than inspecting the output.
+                if (0 == vertexCount)
+                    QCoreApplication::exit(2);
+                else
+                    QCoreApplication::quit();
             });
 
         mainWindow->setHeadlessParams(params.inputPath, params.outputPath,
