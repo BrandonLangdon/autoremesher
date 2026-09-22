@@ -5,6 +5,10 @@ limitations from the work that added STL/3MF import, fixed a remesher crash and
 a headless hang, and introduced an optional fTetWild remesh stage. It is meant
 to save the next contributor from re-deriving why things are the way they are.
 
+> **Update:** the fTetWild integration described below has since been removed
+> from AutoRemesher; fTetWild is becoming a separate tool. The fTetWild
+> sections are kept as a historical record.
+
 _Landed on `master` via the merge "STL/3MF import, multi-island crash fix, and
 optional fTetWild remesh."_
 

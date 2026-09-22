@@ -123,24 +123,10 @@ class MESH_OT_autoremesher(Operator):
             "--smooth-normal", "%.2f" % settings.smooth_normal,
             "--adaptivity", "%.4f" % settings.adaptivity,
         ]
-        env = os.environ.copy()
-        if settings.use_ftetwild:
-            ftw = resolve_binary(prefs.ftetwild_path)
-            if ftw and os.path.isfile(ftw):
-                cmd.append("--use-ftetwild")
-                env["AUTOREMESHER_FTETWILD"] = ftw
-            else:
-                # Fail loudly rather than silently running the built-in remesher,
-                # which can hang for a very long time on the large/messy meshes
-                # fTetWild is meant for.
-                self.report({"ERROR"}, "‘Use fTetWild’ is on but no valid fTetWild binary is set "
-                                       "in Add-on Preferences (it is separate from the app's setting)")
-                self._cleanup()
-                return {"CANCELLED"}
 
         try:
             self._log_file = open(self._log_path, "wb")
-            self._proc = subprocess.Popen(cmd, stdout=self._log_file, stderr=subprocess.STDOUT, env=env)
+            self._proc = subprocess.Popen(cmd, stdout=self._log_file, stderr=subprocess.STDOUT)
         except Exception as exc:  # noqa: BLE001
             self.report({"ERROR"}, "Failed to launch AutoRemesher: %s" % exc)
             self._cleanup()
@@ -186,8 +172,6 @@ class MESH_OT_autoremesher(Operator):
             head = "AutoRemesher: %d%%" % self._percent
             if self._stage:
                 head += " — %s" % self._stage
-            if "fTetWild" in self._stage:
-                head += " [runs silently, may take minutes]"
         else:
             head = "AutoRemesher: running…"
         return "%s   %ds  (Esc to cancel)" % (head, elapsed)

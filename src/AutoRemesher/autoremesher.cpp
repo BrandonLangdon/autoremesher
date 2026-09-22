@@ -20,7 +20,6 @@
  *  SOFTWARE.
  */
 #include <AutoRemesher/AutoRemesher>
-#include <AutoRemesher/ExternalRemesher>
 #include <AutoRemesher/IsotropicRemesher>
 #include <AutoRemesher/MeshSeparator>
 #include <AutoRemesher/Parameterizer>
@@ -449,35 +448,8 @@ bool AutoRemesher::remesh()
         m_isotropicVertices.clear();
         m_isotropicTriangles.clear();
 
-        const bool useExternal = m_useExternalRemesher && ExternalRemesher::isConfigured();
-        if (useExternal) {
-            // Replace the built-in isotropic remesh with fTetWild, one island at a
-            // time (fTetWild is internally multithreaded, so it saturates cores per
-            // call). Any island fTetWild fails on falls back to the built-in path.
-            for (size_t i = 0; i < islandContexes.size(); ++i) {
-                auto& ctx = islandContexes[i];
-                setCurrentStatus("Island " + std::to_string(i + 1) + ": remeshing (fTetWild)...");
-                updateProgress(i, 0.0f);
-                std::vector<Vector3> remeshedVertices;
-                std::vector<std::vector<size_t>> remeshedTriangles;
-                ExternalRemesher::Parameters ftetwildParams;
-                ftetwildParams.edgeLengthAbs = ctx.voxelSize;
-                if (ExternalRemesher::remesh(ctx.vertices, ctx.triangles, ftetwildParams,
-                        remeshedVertices, remeshedTriangles)) {
-                    ctx.vertices = std::move(remeshedVertices);
-                    ctx.triangles = std::move(remeshedTriangles);
-                } else {
-                    std::cerr << "Island " << (i + 1)
-                              << ": fTetWild remesh failed, falling back to built-in remesher." << std::endl;
-                    resample(ctx.vertices, ctx.triangles, ctx.voxelSize, ctx.adaptivity,
-                        ctx.sharpEdgeDegrees, ctx.smoothNormalDegrees, i);
-                }
-                updateProgress(i, 0.3f);
-            }
-        } else {
-            tbb::parallel_for(tbb::blocked_range<size_t>(0, islandContexes.size()),
-                IsotropicPhase(&islandContexes, this, &resampleTime));
-        }
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, islandContexes.size()),
+            IsotropicPhase(&islandContexes, this, &resampleTime));
 
         // Collect the isotropic mesh for the [isotropic] preview sequentially,
         // AFTER the parallel phase. Doing this inside the parallel workers meant

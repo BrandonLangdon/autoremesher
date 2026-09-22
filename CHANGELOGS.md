@@ -1,13 +1,16 @@
 Unreleased
+- Remove the fTetWild integration (GUI "Run fTetWild" step, its Preferences
+  settings, --use-ftetwild / AUTOREMESHER_FTETWILD, and the Blender add-on
+  option). fTetWild is becoming a separate tool
+- macOS build: locate TBB via `brew --prefix tbb` so Intel Macs (/usr/local)
+  build, not just Apple Silicon (/opt/homebrew)
+- Linux build: only pass -march=x86-64-v2 on x86_64 so aarch64 Linux builds
 - Add a Blender add-on (blender/autoremesher_bridge) that quad-remeshes the
   selected object via the AutoRemesher CLI as a subprocess: replace-in-place or
   new-object output, an object picker, live stage/progress in the status bar,
   and cancel. The core stays standalone; see docs/blender-integration.md
 - CLI: include the pipeline stage text in headless progress output, and exit
   non-zero when a headless run produces no geometry
-- Fix an fTetWild hang: floor the fTetWild edge length at 1% of the bounding-box
-  diagonal so a high target-quad count on a small/compact mesh no longer builds
-  an enormous tetrahedralization (observed 400s+ with no result)
 
 1.1.0
 - Import STL (binary/ASCII) and 3MF in addition to OBJ (GUI + CLI), with vertex welding

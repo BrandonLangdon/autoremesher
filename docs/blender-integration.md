@@ -10,8 +10,7 @@ The add-on lives in [`blender/autoremesher_bridge/`](../blender/autoremesher_bri
 
 The add-on is a **thin driver around the existing AutoRemesher CLI**. It never
 links the AutoRemesher core into Blender; it shells out to the standalone
-executable. This is the same process-boundary pattern AutoRemesher already uses
-for fTetWild, and it is deliberate:
+executable. This is deliberate:
 
 - **The core stays standalone.** The CLI (`--input/--output` + parameter flags)
   is the integration contract. Nothing about the core changes for Blender.
@@ -29,7 +28,6 @@ Blender (add-on)                          AutoRemesher (separate process)
 ────────────────                          ───────────────────────────────
 active mesh ──► write input.obj  ──────►  --input input.obj --output output.obj
  (local space, tri)                          --target-quads … --edge-scaling …
-                                             [--use-ftetwild]
                                                      │
 new/replaced object ◄── read output.obj ◄────────────┘  (quads, same space)
 ```
@@ -70,8 +68,7 @@ new/replaced object ◄── read output.obj ◄──────────�
    ```
 3. In Blender: **Edit ▸ Preferences ▸ Add-ons ▸ Install…**, pick the zip, and
    enable **Mesh: AutoRemesher Bridge**.
-4. Expand the add-on's preferences and set **AutoRemesher Binary** (and
-   optionally **fTetWild Binary** to `FloatTetwild_bin`).
+4. Expand the add-on's preferences and set **AutoRemesher Binary**.
    - **macOS:** just select `AutoRemesher.app` — Blender's file browser can't
      descend into a `.app`, so the add-on resolves
      `…/Contents/MacOS/autoremesher` inside it for you. A direct path to the
@@ -96,7 +93,7 @@ new/replaced object ◄── read output.obj ◄──────────�
 - **New Object** mode → original untouched, `<name>_remesh` created alongside.
 - **Apply Modifiers** on an object with a Subdivision modifier → remesh reflects
   the subdivided surface and the modifier is cleared after replace.
-- A large/messy STL import with **Use fTetWild** → completes; UI stays responsive.
+- A large STL import → completes; UI stays responsive.
 - Cancel mid-run with **Esc** → subprocess terminates, scene unchanged.
 - Bad binary path → clear error, no partial changes.
 

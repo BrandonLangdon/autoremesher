@@ -16,7 +16,6 @@ Buy me a coffee for staying up late coding :-) [![](https://www.paypalobjects.co
   - [Workflow](#workflow)
   - [Viewport controls](#viewport-controls)
   - [Parameters](#parameters)
-- [Using fTetWild (optional)](#using-ftetwild-optional)
 - [Command-line (headless)](#command-line-headless)
 - [Blender add-on](#blender-add-on)
 - [Quick Start (prebuilt releases)](#quick-start-prebuilt-releases)
@@ -28,8 +27,7 @@ Buy me a coffee for staying up late coding :-) [![](https://www.paypalobjects.co
 This fork ([BrandonLangdon/autoremesher](https://github.com/BrandonLangdon/autoremesher)) adds several improvements aimed at real-world (especially 3D-print) meshes:
 
 - **More input formats** — imports **OBJ, STL** (binary/ASCII), and **3MF** in addition to OBJ, with automatic vertex welding.
-- **Step-based GUI workflow** — **Open** now only loads the mesh and shows its stats; remeshing is driven by explicit **Run fTetWild** (optional) and **Remesh to Quads** buttons instead of firing automatically.
-- **Optional fTetWild remesh stage** — hand large or messy meshes to [fTetWild](https://github.com/wildmeshing/fTetWild) for a clean, watertight, uniform surface before quad remeshing. See [Using fTetWild](#using-ftetwild-optional).
+- **Step-based GUI workflow** — **Open** now only loads the mesh and shows its stats; remeshing is driven by an explicit **Remesh to Quads** button instead of firing automatically.
 - **Clear progress feedback** — a captioned spinner over the viewport reports the live pipeline stage instead of a near-invisible progress bar.
 - **Trackpad-friendly viewport controls** — plain left-drag orbits, Shift+left-drag pans, and zoom tracks the actual scroll amount.
 - **Blender add-on** — quad-remesh the selected object from inside Blender via a subprocess bridge. See [Blender add-on](#blender-add-on).
@@ -43,7 +41,7 @@ These instructions will get you a copy of **AutoRemesher** up and running on you
 
 ### Prerequisites
 
-- A C++ compiler with **C++17** support (GCC, Clang, or MSVC) — the STL/3MF importer and fTetWild bridge use `std::filesystem`.
+- A C++ compiler with **C++17** support (GCC, Clang, or MSVC) — the STL/3MF importer uses `std::filesystem`.
 - **Qt 5.15.2 or Qt 6.x** (this fork is developed and tested against Qt 6.11).
 - **TBB** (Intel Threading Building Blocks).
 - **zlib** — used to inflate 3MF archives. Provided by the system on Linux/macOS and bundled on Windows.
@@ -129,9 +127,8 @@ The release binary will be at `release\autoremesher.exe`.
 The GUI is organized around explicit steps so nothing kicks off a long computation unexpectedly:
 
 1. **Open** — load an `.obj`, `.stl`, or `.3mf` file. This only loads and displays the mesh and shows its **source stats** (vertex/triangle counts and bounding-box size). It does **not** remesh.
-2. **Run fTetWild** *(optional, only shown when a fTetWild binary is configured)* — rebuilds the surface with fTetWild and adopts its clean output as the working mesh. Useful for large or messy meshes; see [Using fTetWild](#using-ftetwild-optional).
-3. **Remesh to Quads** — runs the quad-remeshing pipeline on the current working mesh using the parameters below.
-4. **Save** — write the resulting quad mesh to a Wavefront `.obj`.
+2. **Remesh to Quads** — runs the quad-remeshing pipeline on the loaded mesh using the parameters below.
+3. **Save** — write the resulting quad mesh to a Wavefront `.obj`.
 
 While a step runs, a captioned spinner over the viewport shows the current stage (e.g. *"Island 3: isotropic remeshing… 42%"*). The **Source / Isotropic / Param / Remeshed** buttons switch the viewport between the input, the intermediate isotropic mesh, the parameterization, and the final quad result.
 
@@ -155,37 +152,6 @@ These control the quad remesh (the **Remesh to Quads** step). The same values ar
 | **Sharp Edge** | 30° – 180° (**90°**) | Dihedral-angle threshold for feature detection. Edges that bend more sharply than this are preserved as hard feature edges that the quad flow aligns to. **Lower** it to keep more edges as hard features (good for hard-surface models); **raise** it so only very sharp creases are kept (good for organic shapes). |
 | **Smooth Normal** | 0° – 180° (**0°**) | Surface smoothing during remeshing. `0` = faceted (face normals used as-is). Larger values blend vertex normals across edges up to that angle for a smoother remeshed surface — helpful for low-poly inputs that should read as smooth. |
 
-## Using fTetWild (optional)
-
-The built-in isotropic remesher can be slow or unstable on very large, non-manifold, or "dirty" meshes (typical of 3D-print STL/3MF files). For those, AutoRemesher can hand the surface to **[fTetWild](https://github.com/wildmeshing/fTetWild)**, which produces a clean, watertight, uniform-resolution manifold surface that quad remeshing consumes directly. It is **opt-in** — small, clean meshes are faster through the built-in path.
-
-> **When to use it — and when not to.** Reach for fTetWild on **messy, large, or non-manifold** meshes: 3D-print STL/3MF, self-intersections, holes, non-manifold edges — cases where the built-in remesher struggles or stalls. **Do not use it on simple, clean meshes** (e.g. an icosphere). fTetWild tetrahedralizes the volume, which carries a fixed overhead that makes it far slower than the built-in path for no benefit; a high **Target Quads** count on a small, compact mesh makes it slower still. For clean geometry, leave fTetWild off and use the built-in remesher.
-
-### 1. Build fTetWild
-
-fTetWild is a separate project; build it once and keep the binary. It needs **GMP** and, on current systems, an **older CMake**:
-
-```bash
-brew install gmp          # or the platform equivalent
-git clone https://github.com/wildmeshing/fTetWild.git
-cd fTetWild
-# CMake >= 3.30 removed FetchContent_Populate, which fTetWild's bundled
-# (2020-era) libigl relies on. Build with CMake 3.29.x.
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-```
-
-This produces `build/FloatTetwild_bin`.
-
-### 2. Point AutoRemesher at it
-
-- **GUI:** open **File ▸ Preferences** (macOS: ⌘,) and set **fTetWild binary** to the `FloatTetwild_bin` path. The same dialog exposes fTetWild parameters — **envelope size** (`-e`, surface fidelity), **edge length** (`-l`, resolution, relative to the bounding-box diagonal), and **coarsen** (fewer triangles). The path is remembered between sessions.
-- **CLI / advanced:** set the `AUTOREMESHER_FTETWILD` environment variable to the binary path.
-
-### 3. Use it
-
-In the GUI, after **Open**, click **Run fTetWild**, then **Remesh to Quads**. On the command line, add `--use-ftetwild` (with `AUTOREMESHER_FTETWILD` set). If fTetWild is unavailable or fails, AutoRemesher falls back to the built-in remesher.
-
 ## Command-line (headless)
 
 AutoRemesher has a CLI mode for headless processing. It accepts the same `.obj`, `.stl`, and `.3mf` inputs and writes a Wavefront `.obj`:
@@ -202,7 +168,7 @@ AutoRemesher has a CLI mode for headless processing. It accepts the same `.obj`,
     --adaptivity 1.0
 ```
 
-Add `--use-ftetwild` to run the fTetWild stage (requires `AUTOREMESHER_FTETWILD`). On Linux/Windows the executable is `./autoremesher` / `autoremesher.exe`. Try it with one of the [common-3d-test-models](https://github.com/alecjacobson/common-3d-test-models).
+On Linux/Windows the executable is `./autoremesher` / `autoremesher.exe`. Try it with one of the [common-3d-test-models](https://github.com/alecjacobson/common-3d-test-models).
 
 ## Blender add-on
 
@@ -212,7 +178,6 @@ A Blender add-on ([`blender/autoremesher_bridge/`](blender/autoremesher_bridge))
 
 - A built AutoRemesher executable (see [Building](#building)).
 - Blender 3.0 or newer.
-- Optional: a built `FloatTetwild_bin` (see [Using fTetWild](#using-ftetwild-optional)) for the fTetWild option.
 
 ### Install
 
@@ -222,9 +187,8 @@ A Blender add-on ([`blender/autoremesher_bridge/`](blender/autoremesher_bridge))
    zip -r autoremesher_bridge.zip autoremesher_bridge -x '*/__pycache__/*'
    ```
 2. In Blender: **Edit ▸ Preferences ▸ Add-ons ▸ Install from Disk…**, choose `autoremesher_bridge.zip`, and tick **Mesh: AutoRemesher Bridge** to enable it.
-3. Expand the add-on's preferences and set the binary paths:
+3. Expand the add-on's preferences and set the binary path:
    - **AutoRemesher Binary** — the CLI executable. On **macOS**, select `AutoRemesher.app` directly: Blender's file browser can't descend into a `.app` bundle, so the add-on resolves `…/Contents/MacOS/autoremesher` inside it for you. On Linux/Windows, pick the `autoremesher` / `autoremesher.exe` file. If the picker won't let you select the `.app`, paste the path into the field instead.
-   - **fTetWild Binary** *(optional)* — the `FloatTetwild_bin` path. This is **separate** from the AutoRemesher app's own fTetWild setting.
 
 > For development you can instead symlink `blender/autoremesher_bridge` into your Blender `scripts/addons/` folder and use **Reload Scripts** after edits.
 
@@ -239,9 +203,7 @@ A Blender add-on ([`blender/autoremesher_bridge/`](blender/autoremesher_bridge))
 
 **Apply Modifiers** remeshes the evaluated mesh (modifier stack baked); when replacing in place, the now-baked modifiers are cleared afterward. Only geometry is transferred — UVs, materials, and vertex groups are not carried over (retopology changes the topology).
 
-### fTetWild in Blender
-
-Enable **Use fTetWild** only for messy/large meshes, and set the **fTetWild Binary** in the add-on preferences first — if it's enabled but unset, the run stops with a clear error rather than silently falling back to the built-in remesher. As in the app, **don't use fTetWild on simple, clean meshes** (see [the note above](#using-ftetwild-optional)); it is much slower there for no benefit. If a run looks stuck, the fTetWild stage genuinely runs silently for a while (the status bar says so); on failure, the last run's log is saved to `autoremesher_last_run.log` in your system temp folder for inspection.
+If a run fails, the last run's log is saved to `autoremesher_last_run.log` in your system temp folder for inspection.
 
 ## Quick Start (prebuilt releases)
 

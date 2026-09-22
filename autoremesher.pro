@@ -92,8 +92,10 @@ unix:!macx {
 	QMAKE_CXXFLAGS_RELEASE -= -O2
 
 	QMAKE_CXXFLAGS_RELEASE += -O3
-	# LTO, aggressive loop unrolling, and x86-64-v2 baseline for broad CPU compatibility
-	QMAKE_CXXFLAGS_RELEASE += -flto -funroll-loops -march=x86-64-v2
+	# LTO and aggressive loop unrolling
+	QMAKE_CXXFLAGS_RELEASE += -flto -funroll-loops
+	# x86-64-v2 baseline for broad CPU compatibility. x86 only, so aarch64 Linux still builds.
+	equals(QT_ARCH, x86_64): QMAKE_CXXFLAGS_RELEASE += -march=x86-64-v2
 	QMAKE_LFLAGS_RELEASE += -flto
 }
 
@@ -194,9 +196,6 @@ HEADERS += src/preferences.h
 SOURCES += src/preferenceswidget.cpp
 HEADERS += src/preferenceswidget.h
 
-SOURCES += src/surfaceremeshgenerator.cpp
-HEADERS += src/surfaceremeshgenerator.h
-
 SOURCES += src/floatnumberwidget.cpp
 HEADERS += src/floatnumberwidget.h
 
@@ -205,9 +204,6 @@ HEADERS += src/intnumberwidget.h
 
 SOURCES += src/AutoRemesher/autoremesher.cpp
 HEADERS += src/AutoRemesher/autoremesher.h
-
-SOURCES += src/AutoRemesher/externalremesher.cpp
-HEADERS += src/AutoRemesher/externalremesher.h
 
 SOURCES += src/AutoRemesher/isotropicremesher.cpp
 HEADERS += src/AutoRemesher/isotropicremesher.h
@@ -465,12 +461,16 @@ win32 {
 }
 
 macx {
-    INCLUDEPATH += /opt/homebrew/opt/tbb/include
+    # Ask Homebrew where TBB lives: /opt/homebrew on Apple Silicon, /usr/local on
+    # Intel. Falls back to the Apple Silicon path if brew isn't on PATH.
+    TBB_PREFIX = $$system(brew --prefix tbb 2>/dev/null)
+    isEmpty(TBB_PREFIX): TBB_PREFIX = /opt/homebrew/opt/tbb
+    INCLUDEPATH += $$TBB_PREFIX/include
     # NOTE: tbbmalloc_proxy (global malloc replacement) is intentionally NOT
     # linked. On macOS it hijacks the malloc zones and races with the main
     # thread's lazy dlopen during AppKit startup, corrupting the heap and
     # aborting when many worker threads allocate at once (multi-island remesh).
-    LIBS += -L/opt/homebrew/opt/tbb/lib -ltbbmalloc -ltbb
+    LIBS += -L$$TBB_PREFIX/lib -ltbbmalloc -ltbb
 }
 unix:!macx {
     LIBS += -ltbb -lz -ldl

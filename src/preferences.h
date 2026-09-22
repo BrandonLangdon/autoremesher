@@ -32,16 +32,6 @@ public:
     Preferences();
     QSize mainWindowSize() const;
     void setMainWindowSize(const QSize&);
-    QString ftetwildPath() const;
-    void setFtetwildPath(const QString&);
-    // fTetWild tuning (see AutoRemesher::ExternalRemesher::Parameters). Stored as
-    // fractions of the bbox diagonal, matching fTetWild's -l/-e conventions.
-    double ftetwildEdgeLengthRel() const;
-    void setFtetwildEdgeLengthRel(double);
-    double ftetwildEnvelopeRel() const;
-    void setFtetwildEnvelopeRel(double);
-    bool ftetwildCoarsen() const;
-    void setFtetwildCoarsen(bool);
     // Appearance of the busy spinner shown over the viewport during long runs.
     QColor busySpinnerColor() const;
     void setBusySpinnerColor(const QColor&);

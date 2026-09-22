@@ -38,16 +38,10 @@ class AutoRemesherPreferences(AddonPreferences):
         "(the add-on resolves .app/Contents/MacOS/autoremesher automatically)",
         subtype="FILE_PATH",
     )
-    ftetwild_path: StringProperty(
-        name="fTetWild Binary",
-        description="Optional path to FloatTetwild_bin, used when 'Use fTetWild' is enabled",
-        subtype="FILE_PATH",
-    )
 
     def draw(self, context):
         layout = self.layout
         layout.prop(self, "autoremesher_path")
-        layout.prop(self, "ftetwild_path")
         layout.label(
             text="macOS: select AutoRemesher.app directly — the inner binary is found for you.",
             icon="INFO",
@@ -90,12 +84,6 @@ class AutoRemesherSettings(PropertyGroup):
         name="Smooth Normal",
         description="Surface smoothing during remeshing (0 = faceted; larger blends normals up to this angle)",
         default=0.0, min=0.0, max=180.0,
-    )
-    use_ftetwild: BoolProperty(
-        name="Use fTetWild",
-        description="Pre-clean the surface with fTetWild before quad remeshing (needs the fTetWild "
-        "binary set in preferences). Robust on large or messy meshes",
-        default=False,
     )
     apply_modifiers: BoolProperty(
         name="Apply Modifiers",
@@ -143,9 +131,7 @@ class VIEW3D_PT_autoremesher(Panel):
         col.prop(settings, "sharp_edge")
         col.prop(settings, "smooth_normal")
 
-        col = layout.column(align=True)
-        col.prop(settings, "use_ftetwild")
-        col.prop(settings, "apply_modifiers")
+        layout.prop(settings, "apply_modifiers")
 
         layout.prop(settings, "output_mode")
 

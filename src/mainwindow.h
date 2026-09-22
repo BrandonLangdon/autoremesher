@@ -37,7 +37,6 @@
 
 class RenderMeshGenerator;
 class QuadMeshGenerator;
-class SurfaceRemeshGenerator;
 class FloatNumberWidget;
 class IntNumberWidget;
 class QLabel;
@@ -71,7 +70,7 @@ public:
     void setHeadlessParams(const QString& inputPath, const QString& outputPath,
         int targetQuads, double edgeScaling,
         double sharpEdgeDegrees, double smoothNormalDegrees,
-        double adaptivity, bool useExternalRemesher = false);
+        double adaptivity);
     void runHeadless();
     void saveMeshToFile(const QString& filename);
 
@@ -100,7 +99,7 @@ private slots:
     void applyLoadedModel(std::vector<AutoRemesher::Vector3>& vertices,
         std::vector<std::vector<size_t>>& triangles);
     void resetDerivedState();
-    void showWorkingMesh();
+    void showSourceMesh();
     void updateSourceStats();
     void setCurrentFilename(const QString& filename);
     void checkRenderQueue();
@@ -109,8 +108,6 @@ private slots:
     void stopBusy();
     void applySpinnerAppearance();
     void positionBusySpinner();
-    void runFtetwild();
-    void surfaceRemeshReady();
     void generateQuadMesh();
     void quadMeshReady();
     void updateButtonStates();
@@ -135,16 +132,9 @@ private:
     float m_sharpEdgeDegrees = 90.0;
     float m_smoothNormalDegrees = 0.0;
     float m_adaptivity = 1.0;
-    bool m_useExternalRemesher = false;
     AutoRemesher::ModelType m_modelType = AutoRemesher::ModelType::Organic;
-    // The original loaded file, kept immutable so "Run fTetWild" is idempotent.
     std::vector<AutoRemesher::Vector3> m_originalVertices;
     std::vector<std::vector<size_t>> m_originalTriangles;
-    // The mesh the quad remesher consumes: the original, or the fTetWild surface
-    // once the standalone fTetWild step has run.
-    std::vector<AutoRemesher::Vector3> m_workingVertices;
-    std::vector<std::vector<size_t>> m_workingTriangles;
-    bool m_ftetwildApplied = false;
     std::vector<AutoRemesher::Vector3>* m_remeshedVertices = nullptr;
     std::vector<std::vector<size_t>>* m_remeshedQuads = nullptr;
     QString m_currentFilename;
@@ -152,10 +142,8 @@ private:
     std::queue<ResultMesh> m_renderQueue;
     bool m_quadMeshResultIsDirty = false;
     QuadMeshGenerator* m_quadMeshGenerator = nullptr;
-    SurfaceRemeshGenerator* m_surfaceRemeshGenerator = nullptr;
     QPushButton* m_loadModelButton = nullptr;
     QPushButton* m_saveMeshButton = nullptr;
-    QPushButton* m_ftetwildButton = nullptr;
     QPushButton* m_remeshButton = nullptr;
     QPushButton* m_previewSourceButton = nullptr;
     QPushButton* m_previewIsotropicButton = nullptr;
