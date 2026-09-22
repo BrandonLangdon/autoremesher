@@ -1,9 +1,12 @@
 QT += core widgets opengl
 # QOpenGLWidget moved into its own module in Qt 6.
 greaterThan(QT_MAJOR_VERSION, 5): QT += openglwidgets
+# Taskbar progress uses QWinTaskbarButton from Qt 5's winextras module, which
+# Qt 6 removed. The define lets the code compile it out when it isn't there.
 win32 {
     qtHaveModule(winextras) {
         QT += winextras
+        DEFINES += AUTOREMESHER_HAVE_WINEXTRAS
     }
 }
 CONFIG += release

@@ -11,7 +11,7 @@ Buy me a coffee for staying up late coding :-) [![](https://www.paypalobjects.co
 - [About this fork](#about-this-fork)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
-  - [Building](#building) — [macOS](#macos) · [Linux](#linux-ubuntudebian) · [Windows](#windows-visual-studio-2022)
+  - [Building](#building) — [macOS](#macos) · [Linux](#linux-ubuntudebian) · [Windows 11](#windows-11-visual-studio-2022)
 - [Using the GUI](#using-the-gui)
   - [Workflow](#workflow)
   - [Viewport controls](#viewport-controls)
@@ -41,7 +41,7 @@ These instructions will get you a copy of **AutoRemesher** up and running on you
 
 ### Prerequisites
 
-- A C++ compiler with **C++17** support (GCC, Clang, or MSVC) — the STL/3MF importer uses `std::filesystem`.
+- A C++ compiler with **C++17** support (GCC, Clang, or MSVC 2022). Qt 6 requires it.
 - **Qt 5.15.2 or Qt 6.x** (this fork is developed and tested against Qt 6.11).
 - **TBB** (Intel Threading Building Blocks).
 - **zlib** — used to inflate 3MF archives. Provided by the system on Linux/macOS and bundled on Windows.
@@ -93,32 +93,30 @@ make -j$(nproc)
 >
 > For a Qt 6 build, install the Qt 6 base/tools packages and run `qmake6` (or the Qt 6 `qmake`) instead of `qmake`.
 
-#### Windows (Visual Studio 2022)
+#### Windows 11 (Visual Studio 2022)
 
-1. Install [Visual Studio 2022](https://visualstudio.microsoft.com/) with **Desktop development with C++** workload.
-2. Install [CMake](https://cmake.org/download/) (required to build TBB from source).
-3. Install Qt 5.15.2 with the [online installer](https://www.qt.io/download-open-source) — select the `msvc2019_64` archive.
-4. Open a **x64 Native Tools Command Prompt for VS 2022** and run:
+See **[docs/building-windows.md](docs/building-windows.md)** for full step-by-step instructions (installing the tools, Qt 6, building TBB, building, running and troubleshooting). In short, from an **x64 Native Tools Command Prompt for VS 2022**:
 
 ```cmd
-:: Build TBB from the bundled third-party source
+:: Build TBB from the bundled third-party source (once)
 cd thirdparty\tbb
-cmake -B build2 ^
-    -DTBB_BUILD_SHARED=ON ^
-    -DTBB_BUILD_STATIC=OFF ^
-    -DTBB_BUILD_TBBMALLOC=OFF ^
-    -DTBB_BUILD_TBBMALLOC_PROXY=OFF ^
-    -DTBB_BUILD_TESTS=OFF
+cmake -B build2 -DTBB_BUILD_SHARED=ON -DTBB_BUILD_STATIC=OFF -DTBB_BUILD_TBBMALLOC=OFF -DTBB_BUILD_TBBMALLOC_PROXY=OFF -DTBB_BUILD_TESTS=OFF
 cmake --build build2 --config Release
 cd ..\..
 
-:: Build AutoRemesher
+:: Build AutoRemesher (Qt 6 installed at C:\Qt\6.8.3\msvc2022_64)
+set PATH=C:\Qt\6.8.3\msvc2022_64\bin;%PATH%
 qmake -spec win32-msvc
 set CL=/MP
 nmake -f Makefile.Release
+
+:: Copy the Qt and TBB DLLs next to the exe, then run it
+windeployqt --release --no-translations release\autoremesher.exe
+copy thirdparty\tbb\build2\Release\tbb.dll release\
+release\autoremesher.exe
 ```
 
-The release binary will be at `release\autoremesher.exe`.
+With Qt 6 the taskbar icon doesn't show remesh progress (Qt 6 removed that API); Qt 5.15 builds keep it.
 
 ## Using the GUI
 

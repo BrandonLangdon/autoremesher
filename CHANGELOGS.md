@@ -5,6 +5,9 @@ Unreleased
 - macOS build: locate TBB via `brew --prefix tbb` so Intel Macs (/usr/local)
   build, not just Apple Silicon (/opt/homebrew)
 - Linux build: only pass -march=x86-64-v2 on x86_64 so aarch64 Linux builds
+- Windows: build with Qt 6 (taskbar progress is compiled out when Qt 5's
+  winextras module isn't available); Windows CI moves to Qt 6.8.3 / MSVC 2022.
+  New step-by-step guide in docs/building-windows.md
 - Add a Blender add-on (blender/autoremesher_bridge) that quad-remeshes the
   selected object via the AutoRemesher CLI as a subprocess: replace-in-place or
   new-object output, an object picker, live stage/progress in the status bar,

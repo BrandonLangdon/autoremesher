@@ -48,7 +48,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
-#ifdef Q_OS_WIN32
+#ifdef AUTOREMESHER_HAVE_WINEXTRAS
 #include <QWinTaskbarButton>
 #include <QWinTaskbarProgress>
 #endif
@@ -97,7 +97,7 @@ MainWindow::MainWindow()
 
     g_windows.insert({ this, QUuid::createUuid() });
 
-#ifdef Q_OS_WIN32
+#ifdef AUTOREMESHER_HAVE_WINEXTRAS
     m_taskbarButton = new QWinTaskbarButton(this);
 #endif
 
@@ -821,7 +821,7 @@ void MainWindow::switchToRemeshView()
 
 void MainWindow::updateProgress(float progress)
 {
-#ifdef Q_OS_WIN32
+#ifdef AUTOREMESHER_HAVE_WINEXTRAS
     m_taskbarButton->progress()->setValue((int)(progress * 100));
 #endif
 }
@@ -1009,7 +1009,7 @@ void MainWindow::openPreferences()
 
 void MainWindow::showEvent(QShowEvent* event)
 {
-#ifdef Q_OS_WIN32
+#ifdef AUTOREMESHER_HAVE_WINEXTRAS
     m_taskbarButton->setWindow(windowHandle());
     m_taskbarButton->progress()->setVisible(true);
 #endif

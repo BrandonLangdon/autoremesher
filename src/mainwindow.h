@@ -43,7 +43,7 @@ class QLabel;
 class QCheckBox;
 class QPushButton;
 class WaitingSpinnerWidget;
-#ifdef Q_OS_WIN32
+#ifdef AUTOREMESHER_HAVE_WINEXTRAS
 class QWinTaskbarButton;
 #endif
 
@@ -177,7 +177,7 @@ private:
     ModelShaderMesh* m_isotropicRenderMesh = nullptr;
     ModelShaderMesh* m_paramRenderMesh = nullptr;
     ModelShaderMesh* m_remeshRenderMesh = nullptr;
-#ifdef Q_OS_WIN32
+#ifdef AUTOREMESHER_HAVE_WINEXTRAS
     QWinTaskbarButton* m_taskbarButton = nullptr;
 #endif
 };
